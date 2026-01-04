@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: crm-migration
+  
+  # 데이터소스 설정 (단일 데이터소스)
+  datasource:
+    jdbc-url: jdbc:postgresql://localhost:5432/migration_db
+    username: postgres
+    password: password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # MyBatis 설정
+  mybatis:
+    mapper-locations: classpath:mapper/*.xml
+    type-aliases-package: com.kt.yaap.mig_batch.model
+    configuration:
+      map-underscore-to-camel-case: true
+      default-fetch-size: 1000
+      default-statement-timeout: 30
+
+  # Batch 설정
+  batch:
+    job:
+      enabled: false  # 스케줄러로 실행 시 false, 자동 실행 시 true
+      names: migrationJob  # 실행할 Job 이름
+    jdbc:
+      initialize-schema: always  # 배치 메타데이터 테이블 자동 생성
+      table-prefix: BATCH_  # 배치 메타데이터 테이블 접두사
+    initialize-schema: always
+
+# 로깅 설정
+logging:
+  level:
+    root: INFO
+    com.kt.yaap.mig_batch: DEBUG
+    org.springframework.batch: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# 배치 실행 설정
+migration:
+  chunk-size: 1000  # 한 번에 처리할 레코드 수 (설정 테이블 읽기 기준)
+  config-table: migration_config  # 마이그레이션 설정 테이블명
+
+# SafeDB 설정
+safedb:
+  enabled: true  # SafeDB 암호화 사용 여부
+  config-file: classpath:safedb.properties  # SafeDB 설정 파일 경로 (선택사항)
+  # 또는 직접 설정 (설정 파일 대신 사용 가능)
+  # server-url: http://localhost:8080/safedb  # SafeDB 서버 URL
+  # api-key: your-api-key  # SafeDB API 키
+  # timeout: 30000  # 연결 타임아웃 (ms)
+  # 설정 테이블 구조 예시 (PostgreSQL):
+  # CREATE TABLE migration_config (
+  #   target_table_name VARCHAR(100) NOT NULL,
+  #   target_column_name VARCHAR(500) NOT NULL  -- 쉼표로 구분하여 여러 컬럼 지정 가능 (예: "phone,email,address")
+  # );
+  # 
+  # PK 컬럼명은 INFORMATION_SCHEMA에서 자동으로 조회됩니다.
+  # target_column_name은 쉼표(,)로 구분하여 여러 컬럼을 한 번에 처리할 수 있습니다.
+

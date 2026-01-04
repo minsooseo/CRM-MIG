@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.kt.yaap.mig_batch.mapper.TargetTableMapper">
+
+    <!-- ResultMap -->
+    <resultMap id="TargetUpdateResultMap" type="com.kt.yaap.mig_batch.model.TargetUpdateEntity">
+        <result property="pkValue" column="pk_value"/>
+        <result property="targetTableName" column="target_table_name"/>
+        <result property="targetColumnName" column="target_column_name"/>
+        <result property="pkColumnName" column="pk_column_name"/>
+        <result property="originalValue" column="original_value"/>
+        <result property="encryptedValue" column="encrypted_value"/>
+        <result property="configId" column="config_id"/>
+    </resultMap>
+
+    <!-- INFORMATION_SCHEMA에서 Primary Key 컬럼명 조회 (PostgreSQL) -->
+    <select id="selectPrimaryKeyColumn" resultType="string">
+        SELECT kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu 
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+        WHERE tc.table_schema = COALESCE(#{params.schemaName}, 'public')
+          AND tc.table_name = #{params.tableName}
+          AND tc.constraint_type = 'PRIMARY KEY'
+        ORDER BY kcu.ordinal_position
+        LIMIT 1
+    </select>
+
+    <!-- 대상 테이블에서 PK와 컬럼 값 조회 -->
+    <select id="selectTargetRecords" resultMap="TargetUpdateResultMap">
+        SELECT 
+            ${params.pkColumnName} AS pk_value,
+            ${params.columnName} AS original_value,
+            #{params.tableName} AS target_table_name,
+            #{params.columnName} AS target_column_name,
+            #{params.pkColumnName} AS pk_column_name
+        FROM ${params.tableName}
+        <if test="params.whereCondition != null and params.whereCondition != ''">
+            WHERE ${params.whereCondition}
+        </if>
+        ORDER BY ${params.pkColumnName}
+    </select>
+
+    <!-- 대상 테이블의 원본 값을 백업 컬럼에 저장 -->
+    <update id="backupOriginalValue">
+        UPDATE ${params.tableName}
+        SET ${params.backupColumnName} = #{params.originalValue}
+        WHERE ${params.pkColumnName} = #{params.pkValue}
+    </update>
+
+    <!-- 대상 테이블 단일 업데이트 -->
+    <update id="updateTargetRecord">
+        UPDATE ${params.tableName}
+        SET ${params.columnName} = #{params.encryptedValue}
+        WHERE ${params.pkColumnName} = #{params.pkValue}
+    </update>
+
+    <!-- 대상 테이블 업데이트 (백업 컬럼과 대상 컬럼을 한 번에 처리) -->
+    <update id="updateTargetRecordWithBackup">
+        UPDATE ${params.tableName}
+        SET 
+            ${params.backupColumnName} = #{params.originalValue},
+            ${params.columnName} = #{params.encryptedValue}
+        WHERE ${params.pkColumnName} = #{params.pkValue}
+    </update>
+
+    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리 - foreach 사용) -->
+    <update id="updateTargetRecordWithMultipleColumns">
+        UPDATE ${params.tableName}
+        SET
+        <foreach collection="params.columnUpdates" item="column" separator=",">
+            ${column.backupColumnName} = #{column.originalValue},
+            ${column.columnName} = #{column.encryptedValue}
+        </foreach>
+        WHERE ${params.pkColumnName} = #{params.pkValue}
+    </update>
+
+    <!-- 대상 테이블 배치 업데이트 -->
+    <update id="batchUpdateTargetRecords">
+        <foreach collection="list" item="item" separator=";">
+            UPDATE ${item.targetTableName}
+            SET ${item.targetColumnName} = #{item.encryptedValue}
+            WHERE ${item.pkColumnName} = #{item.pkValue}
+        </foreach>
+    </update>
+
+    <!-- 컬럼 존재 여부 확인 -->
+    <select id="checkColumnExists" resultType="int">
+        SELECT COUNT(*)
+        FROM information_schema.columns
+        WHERE table_schema = COALESCE(#{params.schemaName}, 'public')
+          AND table_name = #{params.tableName}
+          AND column_name = #{params.columnName}
+    </select>
+
+    <!-- 컬럼의 데이터 타입 조회 -->
+    <select id="selectColumnDataType" resultType="string">
+        SELECT 
+            CASE 
+                WHEN data_type = 'character varying' OR data_type = 'varchar' THEN 
+                    'VARCHAR' || COALESCE('(' || character_maximum_length || ')', '')
+                WHEN data_type = 'character' OR data_type = 'char' THEN 
+                    'CHAR' || COALESCE('(' || character_maximum_length || ')', '')
+                WHEN data_type = 'numeric' THEN 
+                    'NUMERIC' || COALESCE('(' || numeric_precision || ',' || numeric_scale || ')', '')
+                WHEN data_type = 'text' THEN 
+                    'TEXT'
+                WHEN data_type = 'integer' THEN 
+                    'INTEGER'
+                WHEN data_type = 'bigint' THEN 
+                    'BIGINT'
+                WHEN data_type = 'smallint' THEN 
+                    'SMALLINT'
+                WHEN data_type = 'timestamp without time zone' THEN 
+                    'TIMESTAMP'
+                WHEN data_type = 'timestamp with time zone' THEN 
+                    'TIMESTAMPTZ'
+                WHEN data_type = 'date' THEN 
+                    'DATE'
+                WHEN data_type = 'boolean' THEN 
+                    'BOOLEAN'
+                ELSE 
+                    UPPER(data_type)
+            END AS data_type
+        FROM information_schema.columns
+        WHERE table_schema = COALESCE(#{params.schemaName}, 'public')
+          AND table_name = #{params.tableName}
+          AND column_name = #{params.columnName}
+        LIMIT 1
+    </select>
+
+    <!-- 백업 컬럼 생성 (IF NOT EXISTS 대신 Java에서 존재 여부 확인 후 호출) -->
+    <!-- schemaName은 선택적 파라미터이며, 필요 시 하드코딩으로 전달 가능 -->
+    <update id="createBackupColumn">
+        <choose>
+            <when test="params.schemaName != null and params.schemaName != ''">
+                ALTER TABLE ${params.schemaName}.${params.tableName}
+                ADD COLUMN ${params.backupColumnName} ${params.dataType}
+            </when>
+            <otherwise>
+                ALTER TABLE ${params.tableName}
+                ADD COLUMN ${params.backupColumnName} ${params.dataType}
+            </otherwise>
+        </choose>
+    </update>
+
+</mapper>
+

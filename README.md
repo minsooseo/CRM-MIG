@@ -2,45 +2,67 @@
 
 Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용하는 프로젝트입니다.
 
+## 🚀 빠른 시작 (로컬 환경 구성)
+
+로컬 PC에 개발 환경을 구성하려면 다음 문서를 참조하세요:
+
+- **[QUICK_START.md](QUICK_START.md)** - 빠른 시작 가이드 (권장)
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - 상세한 설치 가이드
+- **[ENVIRONMENT_SETUP_SUMMARY.md](ENVIRONMENT_SETUP_SUMMARY.md)** - 환경 구성 요약
+
 ## 개요
 
-소스 테이블에서 마이그레이션 설정을 읽어, 대상 테이블의 PK를 조회한 후 SafeDB를 적용하여 UPDATE하는 배치 프로그램입니다.
+`migration_config` 테이블에서 마이그레이션 설정을 읽어, 대상 테이블의 PK를 조회한 후 SafeDB를 적용하여 UPDATE하는 배치 프로그램입니다.
+
+**주요 특징:**
+- ✅ 테이블별 Step 동적 생성: 각 테이블마다 독립적인 Step 생성 (순차 실행)
+- ✅ 정확한 read_count: Step별로 실제 처리한 레코드 수를 정확하게 집계
+- ✅ 복합키 지원: 단일키 및 복합키 모두 지원
+- ✅ 자동 상태 관리: 처리 완료 후 `status`를 'COMPLETE'로 자동 업데이트
+- ✅ 백업 컬럼 자동 생성: 원본 데이터 손실 방지 (_bak 소문자)
+- ✅ 스키마 설정: application.yml에서 스키마명 설정 가능
 
 ## 주요 구성 요소
 
 ### 1. 의존성 (pom.xml)
 - Spring Boot 2.3.2
-- Spring Batch
-- MyBatis 1.3.5 (JDK 1.7 호환)
-- PostgreSQL 9.4 (JDBC Driver 42.2.20)
+- Spring Batch 4.2.x
+- MyBatis 1.3.5
+- PostgreSQL (JDBC Driver)
 - SafeDB (실제 라이브러리로 교체 필요)
 
 ### 2. 데이터베이스 설정 (application.yml)
-- **소스 데이터베이스**: 마이그레이션 설정 테이블이 있는 PostgreSQL DB
-- **타겟 데이터베이스**: 실제 업데이트 대상 테이블이 있는 PostgreSQL DB
-- **배치 메타데이터 DB**: Spring Batch 실행 이력을 저장하는 PostgreSQL DB
+- **단일 데이터베이스**: 마이그레이션 설정, 대상 테이블, 배치 메타데이터가 모두 같은 DB에 있음
+- **데이터소스**: 단일 PostgreSQL 데이터소스 사용
+- **스키마 설정**: `migration.schema-name`으로 스키마명 지정
 
 ### 3. 배치 구성 요소
 
-#### ItemReader (MigrationItemReader)
-- 마이그레이션 설정 테이블(`migration_config`)에서 설정 정보를 읽어옴
-- 각 설정은 대상 테이블명, 컬럼명, PK 컬럼명 등을 포함
-- MyBatis Mapper를 사용하여 설정 조회
+#### ItemReader (TableRecordReader)
+- **실제 테이블 레코드를 직접 읽음** ⭐
+- 각 Step마다 특정 테이블의 레코드를 직접 조회
+- 동적 PK 조회 및 여러 컬럼의 값을 한 번에 읽어옴
+- `TargetRecordEntity` 객체로 반환 (PK + 여러 컬럼 값 포함)
 
-#### ItemProcessor (MigrationItemProcessor)
-- 설정 정보를 기반으로 대상 테이블에서 PK와 대상 컬럼 값을 조회 (MyBatis 사용)
-- 각 값에 SafeDB 암호화를 적용
-- `MigrationConfigEntity` → `List<TargetUpdateEntity>` 변환
+#### ItemProcessor (EncryptionProcessor)
+- `TargetRecordEntity`를 받아서 각 컬럼 값을 SafeDB 암호화
+- 원본 값과 암호화된 값을 `encryptedValues` Map에 저장
+- 복합키 지원
 
-#### ItemWriter (MigrationItemWriter)
-- SafeDB가 적용된 값으로 대상 테이블을 UPDATE (MyBatis 사용)
-- 테이블별, 컬럼별로 그룹화하여 배치 업데이트 수행
+#### ItemWriter (EncryptionWriter)
+- SafeDB가 적용된 값으로 대상 테이블을 UPDATE
+- 원본 값은 `_bak` 컬럼에 백업 (소문자)
+- 여러 컬럼을 한 번의 UPDATE로 처리
+- 처리 완료 후 `migration_config`의 `status`를 'COMPLETE'로 업데이트
 
-### 4. Job 구성
+### 4. Job 구성 (테이블별 Step 동적 생성)
 - **createBackupColumnStep**: 백업 컬럼 자동 생성 (Tasklet)
-- **migrationStep**: 암호화 대상 처리 (Reader → Processor → Writer)
-  - 설정 읽기 → PK 조회 → 데이터 조회 → SafeDB 적용 → 백업 → UPDATE
-- **postMigrationStep**: 마이그레이션 후처리 (예: 검증, 통계)
+  - `migration_config`에서 활성 설정 조회
+  - 각 컬럼에 대해 `_bak` 백업 컬럼 생성 (소문자)
+- **encryptionStep_테이블명**: 테이블별 암호화 처리 Step
+  - `migration_config`에서 테이블 목록을 읽어 동적으로 Step 생성
+  - 같은 테이블의 여러 컬럼을 하나의 Step에서 함께 처리
+  - 순차 실행 (Step 개수 = 테이블 개수)
 
 ## 설정 방법
 
@@ -48,19 +70,18 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 
 ```sql
 CREATE TABLE migration_config (
-  config_id BIGSERIAL PRIMARY KEY,
-  target_table_name VARCHAR(100) NOT NULL,
+  target_table_name VARCHAR(100) PRIMARY KEY,
   target_column_name VARCHAR(500) NOT NULL,  -- 쉼표로 구분하여 여러 컬럼 지정 가능
   where_condition VARCHAR(500),
   status VARCHAR(20) DEFAULT 'ACTIVE',
   priority INTEGER DEFAULT 0
 );
 
-COMMENT ON COLUMN migration_config.target_table_name IS '대상 테이블명';
+COMMENT ON COLUMN migration_config.target_table_name IS '대상 테이블명 (PRIMARY KEY)';
 COMMENT ON COLUMN migration_config.target_column_name IS '대상 컬럼명 (SafeDB 적용할 컬럼, 쉼표로 구분하여 여러 컬럼 지정 가능)';
 COMMENT ON COLUMN migration_config.where_condition IS 'WHERE 조건 (선택사항)';
-COMMENT ON COLUMN migration_config.status IS '처리 상태';
-COMMENT ON COLUMN migration_config.priority IS '처리 우선순위';
+COMMENT ON COLUMN migration_config.status IS '처리 상태 (ACTIVE, INACTIVE, COMPLETE)';
+COMMENT ON COLUMN migration_config.priority IS '처리 우선순위 (낮을수록 먼저 실행)';
 
 -- 주의: pk_column_name은 저장하지 않습니다.
 -- Primary Key는 INFORMATION_SCHEMA에서 자동으로 조회됩니다.
@@ -72,42 +93,46 @@ VALUES
   -- 단일 컬럼 처리
   ('customer', 'phone', NULL, 'ACTIVE', 1),
   -- 여러 컬럼 동시 처리 (쉼표로 구분)
-  ('customer', 'email,phone,address', 'status = ''ACTIVE''', 'ACTIVE', 1),
   ('order', 'recipient_phone,recipient_name', NULL, 'ACTIVE', 2);
+  
+-- 주의: 
+-- 1. target_table_name이 PRIMARY KEY이므로 하나의 테이블당 하나의 설정만 가능합니다.
+-- 2. 처리 완료 후 status가 'COMPLETE'로 자동 업데이트되어 재실행 시 제외됩니다.
 ```
 
 ### 2. application.yml 설정
 
 ```yaml
 spring:
+  # 단일 데이터소스 설정
   datasource:
-    source:
-      jdbc-url: jdbc:postgresql://localhost:5432/source_db
-      username: postgres
-      password: your_password
-      driver-class-name: org.postgresql.Driver
-    target:
-      jdbc-url: jdbc:postgresql://localhost:5432/target_db
-      username: postgres
-      password: your_password
-      driver-class-name: org.postgresql.Driver
-    batch:
-      jdbc-url: jdbc:postgresql://localhost:5432/batch_db
-      username: postgres
-      password: your_password
-      driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/migration_db
+    username: postgres
+    password: your_password
+    driver-class-name: org.postgresql.Driver
 
   mybatis:
     mapper-locations: classpath:mapper/*.xml
-    type-aliases-package: com.example.crmmig.model
+    type-aliases-package: com.kt.yaap.mig_batch.model
     configuration:
       map-underscore-to-camel-case: true
       default-fetch-size: 1000
       default-statement-timeout: 30
+      log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl  # MyBatis 쿼리 로그
+
+# 로깅 설정
+logging:
+  level:
+    root: INFO
+    com.kt.yaap.mig_batch: DEBUG
+    org.springframework.batch: DEBUG
+    com.kt.yaap.mig_batch.mapper: DEBUG  # MyBatis SQL 로그
+    org.apache.ibatis: TRACE  # 바인딩 파라미터 로그
 
 migration:
-  chunk-size: 1000  # 설정 테이블 읽기 기준 chunk 크기
+  chunk-size: 1000  # Chunk 처리 단위
   config-table: migration_config  # 마이그레이션 설정 테이블명
+  schema-name: public  # 데이터베이스 스키마명
 ```
 
 ### 3. SafeDB 설정
@@ -165,12 +190,17 @@ java -jar target/crm-mig-1.0.0.jar --spring.batch.job.enabled=true --spring.batc
 
 ## 처리 흐름
 
-1. **설정 읽기**: `migration_config` 테이블에서 활성화된 설정 조회 (target_table_name, target_column_name)
-2. **PK 동적 조회**: INFORMATION_SCHEMA에서 대상 테이블의 Primary Key 컬럼명 자동 조회
-3. **데이터 조회**: 대상 테이블에서 PK와 대상 컬럼 값 조회
-4. **SafeDB 적용**: 각 값에 SafeDB 암호화 적용
-5. **백업 수행**: 원본 값을 대상컬럼명_BAK 컬럼에 저장 (예: phone → phone_BAK)
-6. **UPDATE 수행**: 암호화된 값으로 대상 테이블 업데이트
+1. **Step 1: 백업 컬럼 생성**
+   - `migration_config` 테이블에서 활성화된 설정 조회 (status = 'ACTIVE' 또는 NULL)
+   - 각 컬럼에 대해 백업 컬럼 자동 생성 (`{컬럼명}_bak`, 소문자)
+
+2. **Step 2~N: 테이블별 암호화 (순차 실행)**
+   - 각 테이블별로 독립적인 Step 실행 (encryptionStep_테이블명)
+   - **PK 동적 조회**: INFORMATION_SCHEMA에서 대상 테이블의 Primary Key 자동 조회 (복합키 지원)
+   - **데이터 읽기 (Reader)**: 대상 테이블에서 PK와 모든 대상 컬럼 값을 레코드 단위로 조회
+   - **SafeDB 적용 (Processor)**: 각 컬럼 값에 SafeDB 암호화 적용
+   - **UPDATE 수행 (Writer)**: 백업 컬럼에 원본 저장 + 암호화된 값으로 업데이트 (한 번에 처리)
+   - **상태 업데이트**: 처리 완료 후 `status`를 'COMPLETE'로 업데이트
 
 ## 주의사항
 
@@ -179,75 +209,98 @@ java -jar target/crm-mig-1.0.0.jar --spring.batch.job.enabled=true --spring.batc
    - 대상 테이블이 큰 경우 WHERE 조건으로 분할 처리 고려
 
 2. **트랜잭션 관리**
-   - 각 설정별로 트랜잭션이 분리됨
-   - 실패 시 해당 설정만 롤백
+   - 각 Step별로 Chunk 단위 트랜잭션 분리
+   - 실패 시 해당 Chunk만 롤백
 
 3. **백업 컬럼 자동 생성**
-   - 마이그레이션 전처리 단계에서 백업 컬럼(컬럼명_BAK)을 자동으로 생성
+   - 마이그레이션 전처리 단계에서 백업 컬럼(`컬럼명_bak`, 소문자)을 자동으로 생성
    - 원본 컬럼과 동일한 데이터 타입으로 생성
    - 이미 존재하는 경우 건너뜀
-   - 백업 컬럼이 없으면 자동 생성되므로 수동 생성 불필요
+   - PostgreSQL은 컬럼명을 소문자로 저장하므로 `_bak` 소문자 사용
 
 4. **에러 처리**
    - SafeDB 적용 실패 시 로깅 및 별도 처리
    - 실패한 레코드는 재처리 가능하도록 설계
+   - status 업데이트 실패 시 전체 롤백
 
 5. **성능 최적화**
    - 대상 테이블에 적절한 인덱스 설정
-   - 병렬 처리 설정 조정
+   - 테이블별 Step 순차 실행
+   - 여러 컬럼을 한 번의 UPDATE로 처리
+
+6. **상태 관리**
+   - 처리 완료된 테이블의 `status`를 'COMPLETE'로 자동 업데이트
+   - 'COMPLETE' 상태인 설정은 다음 실행 시 자동 제외
+   - 데이터 무결성 보장
+
+7. **read_count 정확성**
+   - 각 Step의 read_count는 실제 처리한 레코드 수를 정확하게 반영
+   - 예: TB_USER 테이블 150건 → encryptionStep_TB_USER의 read_count = 150
 
 ## 파일 구조
 
 ```
 src/
 ├── main/
-│   ├── java/com/example/crmmig/
+│   ├── java/com/kt/yaap/mig_batch/
 │   │   ├── CrmMigrationApplication.java
 │   │   ├── config/
-│   │   │   ├── DatabaseConfig.java
+│   │   │   ├── BatchConfig.java              # Step 설정
+│   │   │   ├── MigrationJobConfig.java       # Job 설정 (테이블별 Step 동적 생성)
+│   │   │   ├── MigrationProperties.java      # 설정 Properties
+│   │   │   ├── DatabaseConfig.java           # 데이터소스 설정
 │   │   │   ├── MyBatisConfig.java            # MyBatis 설정
-│   │   │   ├── MigrationReaderConfig.java    # Reader Bean 설정
-│   │   │   └── BatchConfig.java
+│   │   │   └── SafeDBConfig.java             # SafeDB 설정
 │   │   ├── mapper/
 │   │   │   ├── MigrationConfigMapper.java    # 설정 테이블 Mapper
 │   │   │   └── TargetTableMapper.java        # 대상 테이블 Mapper
 │   │   ├── batch/
-│   │   │   ├── MigrationItemReader.java      # 설정 테이블 읽기 (MyBatis)
-│   │   │   ├── MigrationItemProcessor.java   # PK 조회 및 SafeDB 적용 (MyBatis)
-│   │   │   └── MigrationItemWriter.java      # UPDATE 수행 (MyBatis)
+│   │   │   ├── TableRecordReader.java        # 실제 테이블 레코드 읽기
+│   │   │   ├── EncryptionProcessor.java      # SafeDB 암호화 처리
+│   │   │   └── EncryptionWriter.java         # UPDATE 수행 (status 업데이트 포함)
 │   │   ├── model/
 │   │   │   ├── MigrationConfigEntity.java    # 설정 엔티티
-│   │   │   └── TargetUpdateEntity.java       # 업데이트 엔티티
+│   │   │   ├── TargetRecordEntity.java       # 레코드 엔티티 (PK + 여러 컬럼)
+│   │   │   ├── SourceEntity.java             # 소스 엔티티 (레거시)
+│   │   │   └── TargetEntity.java             # 타겟 엔티티 (레거시)
+│   │   ├── service/
+│   │   │   └── BackupColumnService.java      # 백업 컬럼 자동 생성 서비스
 │   │   ├── util/
 │   │   │   └── SafeDBUtil.java               # SafeDB 유틸리티
-│   │   ├── scheduler/
-│   │   │   └── MigrationScheduler.java
-│   │   └── controller/
-│   │       └── MigrationController.java
+│   │   └── scheduler/
+│   │       └── MigrationScheduler.java       # 배치 스케줄러
 │   └── resources/
 │       ├── mapper/
 │       │   ├── MigrationConfigMapper.xml     # 설정 테이블 쿼리
 │       │   └── TargetTableMapper.xml         # 대상 테이블 쿼리
 │       └── application.yml
 └── test/
+    └── java/com/kt/yaap/mig_batch/
+        ├── ManualJobRunner.java              # 수동 실행 테스트
+        └── ManualJobRerun.java               # 재실행 테스트
 ```
 
 ## 주요 모델 설명
 
 ### MigrationConfigEntity
 - 마이그레이션 설정 정보
-- `target_table_name`: 업데이트할 테이블명
-- `target_column_name`: SafeDB 적용할 컬럼명
-- `pk_column_name`: Primary Key 컬럼명 (동적으로 조회됨, DB에 저장 안함)
+- `target_table_name`: 업데이트할 테이블명 (PRIMARY KEY)
+- `target_column_name`: SafeDB 적용할 컬럼명 (쉼표로 구분 가능)
 - `where_condition`: 선택적 WHERE 조건
+- PK는 INFORMATION_SCHEMA에서 동적으로 조회
 
-### TargetUpdateEntity
-- 업데이트 대상 레코드 정보
-- `pkValue`: Primary Key 값
-- `originalValue`: 원본 값
-- `encryptedValue`: SafeDB 암호화된 값
+### TargetRecordEntity
+- 대상 테이블의 한 레코드 정보
+- `tableName`: 테이블명
+- `targetColumns`: 암호화 대상 컬럼 리스트
+- `pkColumns`: PK 컬럼 리스트
+- `pkValues`: PK 값 Map
+- `columnValues`: 원본 컬럼 값 Map
+- `encryptedValues`: 암호화된 값 Map
+- 복합키 지원
 
 ## 참고 자료
 
 - [Spring Batch Documentation](https://docs.spring.io/spring-batch/docs/current/reference/html/)
 - [Spring Boot Batch](https://spring.io/guides/gs/batch-processing/)
+- [LINUX_EXECUTION_GUIDE.md](LINUX_EXECUTION_GUIDE.md) - Linux 서버에서 수동 실행 가이드

@@ -3,10 +3,11 @@ spring:
     name: crm-migration
   
   # 데이터소스 설정 (단일 데이터소스)
+  # 주의: PostgreSQL 설치 시 설정한 비밀번호로 변경하세요!
   datasource:
-    jdbc-url: jdbc:postgresql://localhost:5432/migration_db
+    url: jdbc:postgresql://localhost:5432/migration_db
     username: postgres
-    password: password
+    password: password  # TODO: PostgreSQL 설치 시 설정한 비밀번호로 변경 필요
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -23,6 +24,9 @@ spring:
       map-underscore-to-camel-case: true
       default-fetch-size: 1000
       default-statement-timeout: 30
+      # SQL 로그 설정
+      log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl  # SLF4J 로거 사용
+      # 또는 log-impl: org.apache.ibatis.logging.stdout.StdOutImpl  # 표준 출력 사용
 
   # Batch 설정
   batch:
@@ -42,11 +46,19 @@ logging:
     org.springframework.batch: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    # MyBatis SQL 로그 (쿼리 출력)
+    com.kt.yaap.mig_batch.mapper: DEBUG
+    org.mybatis: DEBUG
+    # MyBatis SQL 파라미터 로그 (바인딩된 값 출력)
+    org.apache.ibatis: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
 # 배치 실행 설정
 migration:
   chunk-size: 1000  # 한 번에 처리할 레코드 수 (설정 테이블 읽기 기준)
   config-table: migration_config  # 마이그레이션 설정 테이블명
+  schema-name: public  # 데이터베이스 스키마명 (PostgreSQL)
 
 # SafeDB 설정
 safedb:

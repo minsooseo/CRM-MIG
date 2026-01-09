@@ -3,18 +3,7 @@
 
 <mapper namespace="com.kt.yaap.mig_batch.mapper.TargetTableMapper">
 
-    <!-- ResultMap -->
-    <resultMap id="TargetUpdateResultMap" type="com.kt.yaap.mig_batch.model.TargetUpdateEntity">
-        <result property="pkValue" column="pk_value"/>
-        <result property="targetTableName" column="target_table_name"/>
-        <result property="targetColumnName" column="target_column_name"/>
-        <result property="pkColumnName" column="pk_column_name"/>
-        <result property="originalValue" column="original_value"/>
-        <result property="encryptedValue" column="encrypted_value"/>
-        <result property="configId" column="config_id"/>
-    </resultMap>
-
-    <!-- INFORMATION_SCHEMA에서 Primary Key 컬럼명 조회 (PostgreSQL) -->
+    <!-- INFORMATION_SCHEMA에서 Primary Key 컬럼명 조회 (PostgreSQL) - 단일키용 -->
     <select id="selectPrimaryKeyColumn" resultType="string">
         SELECT kcu.column_name
         FROM information_schema.table_constraints tc
@@ -28,45 +17,59 @@
         LIMIT 1
     </select>
 
-    <!-- 대상 테이블에서 PK와 컬럼 값 조회 -->
-    <select id="selectTargetRecords" resultMap="TargetUpdateResultMap">
+    <!-- INFORMATION_SCHEMA에서 모든 Primary Key 컬럼명 조회 (복합키 지원) -->
+    <select id="selectPrimaryKeyColumns" resultType="string">
+        SELECT kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu 
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+        WHERE tc.table_schema = COALESCE(#{params.schemaName}, 'public')
+          AND tc.table_name = #{params.tableName}
+          AND tc.constraint_type = 'PRIMARY KEY'
+        ORDER BY kcu.ordinal_position
+    </select>
+
+    <!-- 대상 테이블에서 PK와 컬럼 값 조회 (복합키 지원) -->
+    <select id="selectTargetRecords" resultType="java.util.HashMap">
         SELECT 
-            ${params.pkColumnName} AS pk_value,
-            ${params.columnName} AS original_value,
-            #{params.tableName} AS target_table_name,
-            #{params.columnName} AS target_column_name,
-            #{params.pkColumnName} AS pk_column_name
+            <choose>
+                <!-- 복합키인 경우: 모든 PK 컬럼 조회 -->
+                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 1">
+                    <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
+                        ${pkCol} AS "pk_${pkCol}"
+                    </foreach>,
+                    ${params.columnName} AS original_value,
+                    #{params.tableName} AS target_table_name,
+                    #{params.columnName} AS target_column_name
+                </when>
+                <!-- 단일키인 경우: 기존 방식 유지 (하위 호환성) -->
+                <otherwise>
+                    ${params.pkColumnName} AS pk_value,
+                    ${params.columnName} AS original_value,
+                    #{params.tableName} AS target_table_name,
+                    #{params.columnName} AS target_column_name,
+                    #{params.pkColumnName} AS pk_column_name
+                </otherwise>
+            </choose>
         FROM ${params.tableName}
         <if test="params.whereCondition != null and params.whereCondition != ''">
             WHERE ${params.whereCondition}
         </if>
-        ORDER BY ${params.pkColumnName}
+        ORDER BY 
+            <choose>
+                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 0">
+                    <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
+                        ${pkCol}
+                    </foreach>
+                </when>
+                <otherwise>
+                    ${params.pkColumnName}
+                </otherwise>
+            </choose>
     </select>
 
-    <!-- 대상 테이블의 원본 값을 백업 컬럼에 저장 -->
-    <update id="backupOriginalValue">
-        UPDATE ${params.tableName}
-        SET ${params.backupColumnName} = #{params.originalValue}
-        WHERE ${params.pkColumnName} = #{params.pkValue}
-    </update>
-
-    <!-- 대상 테이블 단일 업데이트 -->
-    <update id="updateTargetRecord">
-        UPDATE ${params.tableName}
-        SET ${params.columnName} = #{params.encryptedValue}
-        WHERE ${params.pkColumnName} = #{params.pkValue}
-    </update>
-
-    <!-- 대상 테이블 업데이트 (백업 컬럼과 대상 컬럼을 한 번에 처리) -->
-    <update id="updateTargetRecordWithBackup">
-        UPDATE ${params.tableName}
-        SET 
-            ${params.backupColumnName} = #{params.originalValue},
-            ${params.columnName} = #{params.encryptedValue}
-        WHERE ${params.pkColumnName} = #{params.pkValue}
-    </update>
-
-    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리 - foreach 사용) -->
+    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리, 복합키 지원) -->
     <update id="updateTargetRecordWithMultipleColumns">
         UPDATE ${params.tableName}
         SET
@@ -74,16 +77,19 @@
             ${column.backupColumnName} = #{column.originalValue},
             ${column.columnName} = #{column.encryptedValue}
         </foreach>
-        WHERE ${params.pkColumnName} = #{params.pkValue}
-    </update>
-
-    <!-- 대상 테이블 배치 업데이트 -->
-    <update id="batchUpdateTargetRecords">
-        <foreach collection="list" item="item" separator=";">
-            UPDATE ${item.targetTableName}
-            SET ${item.targetColumnName} = #{item.encryptedValue}
-            WHERE ${item.pkColumnName} = #{item.pkValue}
-        </foreach>
+        WHERE 
+            <choose>
+                <!-- 복합키인 경우: 모든 PK 컬럼을 AND 조건으로 -->
+                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 1">
+                    <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
+                        ${pkCol} = #{params.pkValues[${pkCol}]}
+                    </foreach>
+                </when>
+                <!-- 단일키인 경우: 기존 방식 유지 (하위 호환성) -->
+                <otherwise>
+                    ${params.pkColumnName} = #{params.pkValue}
+                </otherwise>
+            </choose>
     </update>
 
     <!-- 컬럼 존재 여부 확인 -->

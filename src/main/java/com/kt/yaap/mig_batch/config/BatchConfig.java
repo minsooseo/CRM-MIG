@@ -9,15 +9,13 @@ import com.kt.yaap.mig_batch.service.BackupColumnService;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 
@@ -32,6 +30,9 @@ public class BatchConfig {
 
     @Value("${migration.chunk-size:1000}")
     private int chunkSize;
+
+    @Autowired
+    private StepBuilderFactory stepBuilderFactory;
 
     @Autowired
     private BackupColumnService backupColumnService;
@@ -51,14 +52,11 @@ public class BatchConfig {
     /**
      * 백업 컬럼 생성 Step
      * 
-     * JobRepository는 @EnableBatchProcessing에 의해 자동 생성됩니다.
+     * StepBuilderFactory는 @EnableBatchProcessing에 의해 자동 생성됩니다.
      */
     @Bean
-    public Step createBackupColumnStep(JobRepository jobRepository,
-                                       PlatformTransactionManager transactionManager) {
-        return new StepBuilder("createBackupColumnStep")
-                .repository(jobRepository)
-                .transactionManager(transactionManager)
+    public Step createBackupColumnStep() {
+        return stepBuilderFactory.get("createBackupColumnStep")
                 .tasklet(createBackupColumnTasklet())
                 .build();
     }
@@ -73,14 +71,9 @@ public class BatchConfig {
      * 
      * @param tableName 테이블명
      * @param targetColumns 암호화 대상 컬럼들
-     * @param jobRepository JobRepository
-     * @param transactionManager PlatformTransactionManager
      * @return 테이블별 Step
      */
-    public Step createTableEncryptionStep(String tableName,
-                                          List<String> targetColumns,
-                                          JobRepository jobRepository,
-                                          PlatformTransactionManager transactionManager) {
+    public Step createTableEncryptionStep(String tableName, List<String> targetColumns) {
         
         // Reader: 대상 테이블의 실제 레코드 읽기 (여러 컬럼 포함)
         TableRecordReader reader = new TableRecordReader(
@@ -88,9 +81,7 @@ public class BatchConfig {
         
         String stepName = "encryptionStep_" + tableName;
         
-        return new StepBuilder(stepName)
-                .repository(jobRepository)
-                .transactionManager(transactionManager)
+        return stepBuilderFactory.get(stepName)
                 .<TargetRecordEntity, TargetRecordEntity>chunk(chunkSize)
                 .reader(reader)
                 .processor(encryptionProcessor)

@@ -7,14 +7,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.job.builder.SimpleJobBuilder;
-import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -41,13 +39,13 @@ public class MigrationJobConfig {
     private static final Logger log = LoggerFactory.getLogger(MigrationJobConfig.class);
 
     @Autowired
+    private JobBuilderFactory jobBuilderFactory;
+
+    @Autowired
     private MigrationConfigMapper migrationConfigMapper;
     
     @Autowired
     private BatchConfig batchConfig;
-    
-    @Autowired
-    private PlatformTransactionManager transactionManager;
 
     /**
      * 마이그레이션 Job 생성 (테이블별 Step 동적 생성)
@@ -56,8 +54,7 @@ public class MigrationJobConfig {
      * 같은 테이블의 여러 컬럼은 하나의 Step에서 함께 처리됩니다.
      */
     @Bean
-    public Job migrationJob(JobRepository jobRepository,
-                           @Qualifier("createBackupColumnStep") Step createBackupColumnStep) {
+    public Job migrationJob(@Qualifier("createBackupColumnStep") Step createBackupColumnStep) {
         
         // migration_config에서 설정 조회
         List<MigrationConfigEntity> configs = migrationConfigMapper.selectActiveConfigs();
@@ -83,8 +80,7 @@ public class MigrationJobConfig {
         }
         
         // Job 빌드 시작
-        SimpleJobBuilder jobBuilder = new JobBuilder("migrationJob")
-                .repository(jobRepository)
+        SimpleJobBuilder jobBuilder = jobBuilderFactory.get("migrationJob")
                 .start(createBackupColumnStep);
         
         // 각 테이블별로 Step 생성하여 순차 연결
@@ -92,8 +88,7 @@ public class MigrationJobConfig {
             String tableName = entry.getKey();
             List<String> columns = entry.getValue();
             
-            Step tableStep = batchConfig.createTableEncryptionStep(
-                    tableName, columns, jobRepository, transactionManager);
+            Step tableStep = batchConfig.createTableEncryptionStep(tableName, columns);
             
             jobBuilder = jobBuilder.next(tableStep);
             log.info("Added encryption step for table: {}, columns: {}", tableName, columns);

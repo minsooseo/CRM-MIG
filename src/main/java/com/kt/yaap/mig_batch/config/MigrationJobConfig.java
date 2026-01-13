@@ -10,12 +10,12 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.job.builder.SimpleJobBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -23,14 +23,17 @@ import java.util.Map;
  * 마이그레이션 Job 설정
  * 
  * 실행 순서:
- * 1. createBackupColumnStep: 백업 컬럼 자동 생성
- * 2. encryptionStep_테이블명: 각 테이블별 암호화 처리
+ * 1. encryptionStep_테이블명: 각 테이블별 암호화 처리 (순차 실행)
  * 
  * 특징:
  * - Reader가 실제 테이블 레코드를 직접 읽음
  * - read_count = 실제 처리한 레코드 수 (정확!)
  * - 한 테이블의 여러 컬럼을 함께 처리
  * - Step 개수 = 테이블 개수
+ * 
+ * 주의사항:
+ * - 백업 컬럼(_bak)은 사전에 수동으로 생성되어 있어야 함
+ * - migration_config 테이블에 활성 설정이 최소 1개 이상 있어야 함
  */
 @Configuration
 @EnableBatchProcessing
@@ -52,9 +55,11 @@ public class MigrationJobConfig {
      * 
      * migration_config에서 설정을 읽어 테이블별로 Step을 생성합니다.
      * 같은 테이블의 여러 컬럼은 하나의 Step에서 함께 처리됩니다.
+     * 
+     * 주의: 백업 컬럼(_bak)은 사전에 수동으로 생성되어 있어야 합니다.
      */
     @Bean
-    public Job migrationJob(@Qualifier("createBackupColumnStep") Step createBackupColumnStep) {
+    public Job migrationJob() {
         
         // migration_config에서 설정 조회
         List<MigrationConfigEntity> configs = migrationConfigMapper.selectActiveConfigs();
@@ -79,12 +84,27 @@ public class MigrationJobConfig {
             log.info("  - Table: {}, Columns: {}", entry.getKey(), entry.getValue());
         }
         
-        // Job 빌드 시작
-        SimpleJobBuilder jobBuilder = jobBuilderFactory.get("migrationJob")
-                .start(createBackupColumnStep);
+        // 테이블이 없는 경우 예외 처리
+        if (tableColumnMap.isEmpty()) {
+            throw new IllegalStateException("No active migration configs found. Please check migration_config table.");
+        }
         
-        // 각 테이블별로 Step 생성하여 순차 연결
-        for (Map.Entry<String, List<String>> entry : tableColumnMap.entrySet()) {
+        // 첫 번째 테이블 스텝으로 Job 시작
+        Iterator<Map.Entry<String, List<String>>> iterator = tableColumnMap.entrySet().iterator();
+        Map.Entry<String, List<String>> firstEntry = iterator.next();
+        
+        Step firstStep = batchConfig.createTableEncryptionStep(
+            firstEntry.getKey(), firstEntry.getValue());
+        
+        log.info("Starting with encryption step for table: {}, columns: {}", 
+            firstEntry.getKey(), firstEntry.getValue());
+        
+        SimpleJobBuilder jobBuilder = jobBuilderFactory.get("migrationJob")
+                .start(firstStep);
+        
+        // 나머지 테이블 스텝들을 순차적으로 연결
+        while (iterator.hasNext()) {
+            Map.Entry<String, List<String>> entry = iterator.next();
             String tableName = entry.getKey();
             List<String> columns = entry.getValue();
             

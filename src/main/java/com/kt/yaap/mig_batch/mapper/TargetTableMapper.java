@@ -44,29 +44,6 @@ public interface TargetTableMapper {
      * @return 업데이트된 행 수
      */
     int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
-
-    /**
-     * 컬럼 존재 여부 확인
-     * 
-     * @param params 확인 파라미터 (tableName, columnName, schemaName)
-     * @return 존재하면 1, 없으면 0
-     */
-    int checkColumnExists(@Param("params") Map<String, Object> params);
-
-    /**
-     * 컬럼의 데이터 타입 조회
-     * 
-     * @param params 조회 파라미터 (tableName, columnName, schemaName)
-     * @return 데이터 타입 (예: VARCHAR(100), INTEGER 등)
-     */
-    String selectColumnDataType(@Param("params") Map<String, Object> params);
-
-    /**
-     * 백업 컬럼 생성
-     * 
-     * @param params 생성 파라미터 (tableName, backupColumnName, dataType, schemaName)
-     */
-    void createBackupColumn(@Param("params") Map<String, Object> params);
 }
 
 

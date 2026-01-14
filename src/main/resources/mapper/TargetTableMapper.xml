@@ -92,65 +92,6 @@
             </choose>
     </update>
 
-    <!-- 컬럼 존재 여부 확인 -->
-    <select id="checkColumnExists" resultType="int">
-        SELECT COUNT(*)
-        FROM information_schema.columns
-        WHERE table_schema = COALESCE(#{params.schemaName}, 'public')
-          AND table_name = #{params.tableName}
-          AND column_name = #{params.columnName}
-    </select>
-
-    <!-- 컬럼의 데이터 타입 조회 -->
-    <select id="selectColumnDataType" resultType="string">
-        SELECT 
-            CASE 
-                WHEN data_type = 'character varying' OR data_type = 'varchar' THEN 
-                    'VARCHAR' || COALESCE('(' || character_maximum_length || ')', '')
-                WHEN data_type = 'character' OR data_type = 'char' THEN 
-                    'CHAR' || COALESCE('(' || character_maximum_length || ')', '')
-                WHEN data_type = 'numeric' THEN 
-                    'NUMERIC' || COALESCE('(' || numeric_precision || ',' || numeric_scale || ')', '')
-                WHEN data_type = 'text' THEN 
-                    'TEXT'
-                WHEN data_type = 'integer' THEN 
-                    'INTEGER'
-                WHEN data_type = 'bigint' THEN 
-                    'BIGINT'
-                WHEN data_type = 'smallint' THEN 
-                    'SMALLINT'
-                WHEN data_type = 'timestamp without time zone' THEN 
-                    'TIMESTAMP'
-                WHEN data_type = 'timestamp with time zone' THEN 
-                    'TIMESTAMPTZ'
-                WHEN data_type = 'date' THEN 
-                    'DATE'
-                WHEN data_type = 'boolean' THEN 
-                    'BOOLEAN'
-                ELSE 
-                    UPPER(data_type)
-            END AS data_type
-        FROM information_schema.columns
-        WHERE table_schema = COALESCE(#{params.schemaName}, 'public')
-          AND table_name = #{params.tableName}
-          AND column_name = #{params.columnName}
-        LIMIT 1
-    </select>
-
-    <!-- 백업 컬럼 생성 (IF NOT EXISTS 대신 Java에서 존재 여부 확인 후 호출) -->
-    <!-- schemaName은 선택적 파라미터이며, 필요 시 하드코딩으로 전달 가능 -->
-    <update id="createBackupColumn">
-        <choose>
-            <when test="params.schemaName != null and params.schemaName != ''">
-                ALTER TABLE ${params.schemaName}.${params.tableName}
-                ADD COLUMN ${params.backupColumnName} ${params.dataType}
-            </when>
-            <otherwise>
-                ALTER TABLE ${params.tableName}
-                ADD COLUMN ${params.backupColumnName} ${params.dataType}
-            </otherwise>
-        </choose>
-    </update>
 
 </mapper>
 

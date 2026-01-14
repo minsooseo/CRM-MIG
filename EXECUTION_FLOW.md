@@ -5,13 +5,13 @@
 ```
 [애플리케이션 시작]
        ↓
+[사전 준비: 백업 컬럼 수동 생성]
+       - 각 대상 컬럼에 대해 _bak 컬럼 수동 생성 (소문자)
+       - 예: phone → phone_bak, email → email_bak
+       ↓
 [Job 트리거] (스케줄러 또는 수동 실행)
        ↓
-[Step 1: 백업 컬럼 생성]
-       - migration_config에서 활성 설정 조회
-       - 각 컬럼에 대해 _bak 컬럼 생성 (소문자)
-       ↓
-[Step 2~N: 테이블별 암호화 (순차 실행)]
+[Step 1~N: 테이블별 암호화 (순차 실행)]
        - migration_config에서 테이블 목록 읽어 동적으로 Step 생성
        - 각 테이블마다 독립적인 Step 순차 실행
        - Step: Reader → Processor → Writer
@@ -22,52 +22,36 @@
 
 ---
 
-## 📍 Step 1: 백업 컬럼 자동 생성 (`createBackupColumnStep`)
+## ⚠️ 사전 준비: 백업 컬럼 수동 생성
 
-### 실행 위치
-- **클래스**: `BackupColumnService`
-- **Step 타입**: `Tasklet` (단일 작업)
+### 필수 작업
+배치 프로그램 실행 **전에** 백업 컬럼을 수동으로 생성해야 합니다.
 
-### 처리 흐름
+### 백업 컬럼 생성 규칙
+- **컬럼명**: `{원본컬럼명}_bak` (소문자)
+- **데이터 타입**: 원본 컬럼과 동일
+- **예시**:
+  - `phone VARCHAR(20)` → `phone_bak VARCHAR(20)`
+  - `email VARCHAR(100)` → `email_bak VARCHAR(100)`
 
-```
-1. migration_config 테이블에서 활성화된 설정 조회
-   (status = 'ACTIVE' 또는 NULL, 'COMPLETE' 제외)
-       ↓
-2. 각 설정별로 target_column_name을 쉼표(,)로 분리
-   예: "phone,email" → ["phone", "email"]
-       ↓
-3. 각 컬럼에 대해:
-   a) 백업 컬럼명 생성: {column_name}_bak (소문자)
-   b) INFORMATION_SCHEMA에서 백업 컬럼 존재 여부 확인
-   c) 존재하지 않으면:
-      - 원본 컬럼의 데이터 타입 조회
-      - 백업 컬럼 생성 (ALTER TABLE ... ADD COLUMN)
-   d) 이미 존재하면 건너뜀
-       ↓
-4. 자동 커밋 모드로 실행 (DDL 작업)
-```
-
-### 주요 SQL 쿼리
-- `MigrationConfigMapper.selectActiveConfigs()`: 활성 설정 조회
-- `TargetTableMapper.checkColumnExists()`: 컬럼 존재 확인
-- `TargetTableMapper.selectColumnDataType()`: 데이터 타입 조회
-- `TargetTableMapper.createBackupColumn()`: 백업 컬럼 생성
-
-### 예시
+### SQL 예시
 ```sql
--- migration_config 데이터
-target_table_name: "customer"
-target_column_name: "phone,email"
+-- customer 테이블에 phone_bak 컬럼 생성
+ALTER TABLE customer 
+ADD COLUMN IF NOT EXISTS phone_bak VARCHAR(20);
 
--- 실행 결과
-✓ customer.phone_bak 생성 (VARCHAR 타입, 소문자)
-✓ customer.email_bak 생성 (VARCHAR 타입, 소문자)
+-- "order" 테이블에 recipient_phone_bak 컬럼 생성
+ALTER TABLE "order" 
+ADD COLUMN IF NOT EXISTS recipient_phone_bak VARCHAR(20);
+
+-- "order" 테이블에 recipient_name_bak 컬럼 생성
+ALTER TABLE "order" 
+ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 ```
 
 ---
 
-## 📍 Step 2~N: 테이블별 암호화 (`encryptionStep_테이블명`)
+## 📍 Step 1~N: 테이블별 암호화 (`encryptionStep_테이블명`)
 
 ### 실행 구조
 - **Step 타입**: `Chunk` (배치 처리)
@@ -90,8 +74,7 @@ target_column_name: "phone,email"
    - encryptionStep_TB_ORDER
        ↓
 4. JobBuilder로 순차 연결
-   .start(createBackupColumnStep)
-   .next(encryptionStep_TB_USER)
+   .start(encryptionStep_TB_USER)
    .next(encryptionStep_TB_ORDER)
    .build()
 ```
@@ -302,24 +285,24 @@ CREATE TABLE migration_config (
 ```
 예시: customer 테이블
 
-Before:
+Before (사전 준비 전):
 - customer_id (PK)
 - phone
 - email
 - name
 
-After Step 1 (백업 컬럼 생성):
+After 사전 준비 (백업 컬럼 수동 생성):
 - customer_id (PK)
 - phone
 - email
 - name
-- phone_bak      ← 새로 생성 (소문자)
-- email_bak      ← 새로 생성 (소문자)
+- phone_bak      ← 수동으로 생성 (소문자)
+- email_bak      ← 수동으로 생성 (소문자)
 
-After Step 2 (암호화 처리):
-- phone_bak = "010-1234-5678" (원본)
+After Step 1 (암호화 처리):
+- phone_bak = "010-1234-5678" (원본 백업)
 - phone = "encrypted_value" (암호화됨)
-- email_bak = "test@example.com" (원본)
+- email_bak = "test@example.com" (원본 백업)
 - email = "encrypted_value" (암호화됨)
 ```
 
@@ -339,7 +322,8 @@ After Step 2 (암호화 처리):
 
 ### 3. 자동 백업
 - 원본 데이터 손실 방지
-- 백업 컬럼 자동 생성 및 데이터 저장 (_bak 소문자)
+- 백업 컬럼에 원본 데이터 저장 (_bak 소문자)
+- 백업 컬럼은 사전에 수동으로 생성 필요
 
 ### 4. 트랜잭션 관리
 - Chunk 단위로 커밋/롤백
@@ -370,16 +354,11 @@ After Step 2 (암호화 처리):
 ## 📊 실행 예시 로그
 
 ```
-=== Step 1: 백업 컬럼 자동 생성 시작 ===
-INFO  - 백업 컬럼 생성 완료: customer.phone_bak (타입: VARCHAR(50), 소문자)
-INFO  - 백업 컬럼 생성 완료: customer.email_bak (타입: VARCHAR(100), 소문자)
-INFO  - === Step 1: 백업 컬럼 자동 생성 완료 ===
-
 INFO  - Creating migrationJob with 2 table-specific steps
 INFO  -   - Table: customer, Columns: [phone, email]
 INFO  -   - Table: order, Columns: [receiver_name]
 
-INFO  - Added encryption step for table: customer, columns: [phone, email]
+INFO  - Starting with encryption step for table: customer, columns: [phone, email]
 INFO  - Added encryption step for table: order, columns: [receiver_name]
 
 INFO  - [encryptionStep_customer] TableRecordReader initialized for table: customer
@@ -401,20 +380,24 @@ INFO  - Job 'migrationJob' completed successfully
 
 ## ⚠️ 주의사항
 
-1. **SafeDB 라이브러리**: `SafeDBUtil`은 현재 플레이스홀더 구현입니다. 실제 SafeDB 라이브러리로 교체 필요
+1. **백업 컬럼 사전 생성 필수**: 
+   - 배치 실행 전에 모든 대상 컬럼에 대한 백업 컬럼(_bak)을 수동으로 생성해야 함
+   - 백업 컬럼이 없으면 Writer에서 오류 발생
 
-2. **PostgreSQL 호환성**: 
+2. **SafeDB 라이브러리**: `SafeDBUtil`은 현재 플레이스홀더 구현입니다. 실제 SafeDB 라이브러리로 교체 필요
+
+3. **PostgreSQL 호환성**: 
    - 백업 컬럼명은 소문자 (_bak) 사용
-   - 컬럼 존재 확인 시 SQLSTATE 42701 (duplicate_column) 처리
+   - 예약어 테이블명은 큰따옴표로 감싸기 (예: "order")
 
-3. **단일 데이터소스**:
+4. **단일 데이터소스**:
    - `migration_config` 테이블, 대상 테이블, 배치 메타데이터가 모두 같은 DB에 있음
 
-4. **순차 처리**:
+5. **순차 처리**:
    - 각 테이블별로 독립적인 Step 순차 실행
    - 안정성 우선
 
-5. **read_count 정확성**:
+6. **read_count 정확성**:
    - Reader가 실제 테이블 레코드를 직접 읽어 정확한 집계 가능
    - migration_config 개수가 아닌 실제 처리 레코드 수 반영
 

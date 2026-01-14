@@ -69,37 +69,27 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
                     params.put("tableName", tableName);
                     params.put("columnName", columnName);
                     params.put("whereCondition", null);
-                    
-                    if (pkColumnNames.size() > 1) {
-                        params.put("pkColumnNames", pkColumnNames);
-                    } else {
-                        params.put("pkColumnName", pkColumnNames.get(0));
-                    }
+                    params.put("pkColumnNames", pkColumnNames);  // 단일키/복합키 통일
                     
                     List<Map<String, Object>> records = mapper.selectTargetRecords(params);
                     
                     // 각 레코드를 PK 기준으로 Entity에 추가
                     for (Map<String, Object> record : records) {
-                        // PK 값 추출
+                        // PK 값 추출 (단일키/복합키 통일)
                         Map<String, Object> pkValues = new HashMap<String, Object>();
-                        if (pkColumnNames.size() > 1) {
-                            // 복합키
-                            for (String pkCol : pkColumnNames) {
-                                String key = "pk_" + pkCol.toLowerCase();
-                                Object value = record.get(key);
-                                if (value == null) {
-                                    for (String mapKey : record.keySet()) {
-                                        if (mapKey.equalsIgnoreCase(key)) {
-                                            value = record.get(mapKey);
-                                            break;
-                                        }
+                        for (String pkCol : pkColumnNames) {
+                            String key = "pk_" + pkCol.toLowerCase();
+                            Object value = record.get(key);
+                            if (value == null) {
+                                // 대소문자 무관하게 검색
+                                for (String mapKey : record.keySet()) {
+                                    if (mapKey.equalsIgnoreCase(key)) {
+                                        value = record.get(mapKey);
+                                        break;
                                     }
                                 }
-                                pkValues.put(pkCol, value);
                             }
-                        } else {
-                            // 단일키
-                            pkValues.put(pkColumnNames.get(0), record.get("pk_value"));
+                            pkValues.put(pkCol, value);
                         }
                         
                         // PK를 키로 사용 (문자열로 변환)

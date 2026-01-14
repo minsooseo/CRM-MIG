@@ -30,46 +30,26 @@
         ORDER BY kcu.ordinal_position
     </select>
 
-    <!-- 대상 테이블에서 PK와 컬럼 값 조회 (복합키 지원) -->
+    <!-- 대상 테이블에서 PK와 컬럼 값 조회 (단일키/복합키 통일 처리) -->
     <select id="selectTargetRecords" resultType="java.util.HashMap">
         SELECT 
-            <choose>
-                <!-- 복합키인 경우: 모든 PK 컬럼 조회 -->
-                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 1">
-                    <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
-                        ${pkCol} AS "pk_${pkCol}"
-                    </foreach>,
-                    ${params.columnName} AS original_value,
-                    #{params.tableName} AS target_table_name,
-                    #{params.columnName} AS target_column_name
-                </when>
-                <!-- 단일키인 경우: 기존 방식 유지 (하위 호환성) -->
-                <otherwise>
-                    ${params.pkColumnName} AS pk_value,
-                    ${params.columnName} AS original_value,
-                    #{params.tableName} AS target_table_name,
-                    #{params.columnName} AS target_column_name,
-                    #{params.pkColumnName} AS pk_column_name
-                </otherwise>
-            </choose>
+            <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
+                ${pkCol} AS "pk_${pkCol}"
+            </foreach>,
+            ${params.columnName} AS original_value,
+            #{params.tableName} AS target_table_name,
+            #{params.columnName} AS target_column_name
         FROM ${params.tableName}
         <if test="params.whereCondition != null and params.whereCondition != ''">
             WHERE ${params.whereCondition}
         </if>
         ORDER BY 
-            <choose>
-                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 0">
-                    <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
-                        ${pkCol}
-                    </foreach>
-                </when>
-                <otherwise>
-                    ${params.pkColumnName}
-                </otherwise>
-            </choose>
+            <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
+                ${pkCol}
+            </foreach>
     </select>
 
-    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리, 복합키 지원) -->
+    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리, 단일키/복합키 통일 처리) -->
     <update id="updateTargetRecordWithMultipleColumns">
         UPDATE ${params.tableName}
         SET
@@ -78,18 +58,9 @@
             ${column.columnName} = #{column.encryptedValue}
         </foreach>
         WHERE 
-            <choose>
-                <!-- 복합키인 경우: 모든 PK 컬럼을 AND 조건으로 -->
-                <when test="params.pkColumnNames != null and params.pkColumnNames.size() > 1">
-                    <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
-                        ${pkCol} = #{params.pkValues[${pkCol}]}
-                    </foreach>
-                </when>
-                <!-- 단일키인 경우: 기존 방식 유지 (하위 호환성) -->
-                <otherwise>
-                    ${params.pkColumnName} = #{params.pkValue}
-                </otherwise>
-            </choose>
+            <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
+                ${pkCol} = #{params.pkValues[${pkCol}]}
+            </foreach>
     </update>
 
 

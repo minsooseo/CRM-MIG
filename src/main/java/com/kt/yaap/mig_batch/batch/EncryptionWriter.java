@@ -67,18 +67,12 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
                     continue;
                 }
                 
-                // UPDATE 파라미터 구성
+                // UPDATE 파라미터 구성 (단일키/복합키 통일)
                 Map<String, Object> updateParams = new HashMap<String, Object>();
                 updateParams.put("tableName", tableName);
                 updateParams.put("columnUpdates", columnUpdates);
-                
-                if (item.isCompositeKey()) {
-                    updateParams.put("pkColumnNames", item.getPkColumnNames());
-                    updateParams.put("pkValues", item.getPkValues());
-                } else {
-                    updateParams.put("pkColumnName", item.getPkColumnNames().get(0));
-                    updateParams.put("pkValue", item.getPkValues().get(item.getPkColumnNames().get(0)));
-                }
+                updateParams.put("pkColumnNames", item.getPkColumnNames());
+                updateParams.put("pkValues", item.getPkValues());
                 
                 // UPDATE 실행
                 mapper.updateTargetRecordWithMultipleColumns(updateParams);

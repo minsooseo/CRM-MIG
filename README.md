@@ -10,6 +10,15 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 - **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - 상세한 설치 가이드
 - **[ENVIRONMENT_SETUP_SUMMARY.md](ENVIRONMENT_SETUP_SUMMARY.md)** - 환경 구성 요약
 
+## 🎯 실행 가이드
+
+프로젝트 실행 방법은 다음 문서를 참조하세요:
+
+- **[EXECUTION_GUIDE.md](EXECUTION_GUIDE.md)** - 통합 실행 가이드 (STS + Linux) ⭐ 권장
+- **[STS_MANUAL_EXECUTION_GUIDE.md](STS_MANUAL_EXECUTION_GUIDE.md)** - STS 수동 실행
+- **[STS_JOB_RERUN_GUIDE.md](STS_JOB_RERUN_GUIDE.md)** - STS Job 재실행
+- **[LINUX_EXECUTION_GUIDE.md](LINUX_EXECUTION_GUIDE.md)** - Linux 서버 실행
+
 ## 개요
 
 `migration_config` 테이블에서 마이그레이션 설정을 읽어, 대상 테이블의 PK를 조회한 후 SafeDB를 적용하여 UPDATE하는 배치 프로그램입니다.

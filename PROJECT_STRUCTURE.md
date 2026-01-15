@@ -41,9 +41,9 @@ CRM-MIG/
 │   │   │               │   ├── MigrationConfigMapper.java   # 설정 테이블 Mapper
 │   │   │               │   └── TargetTableMapper.java       # 대상 테이블 Mapper
 │   │   │               │
-│   │   │               ├── model/             # 엔티티 모델
-│   │   │               │   ├── MigrationConfigEntity.java    # 마이그레이션 설정 엔티티
-│   │   │               │   ├── TargetRecordEntity.java      # 레코드 엔티티 (PK + 여러 컬럼)
+│   │   │               ├── model/             # 엔티티 모델 (Lombok 적용)
+│   │   │               │   ├── MigrationConfigEntity.java    # 마이그레이션 설정 (@Data, @NoArgsConstructor)
+│   │   │               │   ├── TargetRecordEntity.java      # 레코드 엔티티 (@Data, 명시적 생성자)
 │   │   │               │   ├── SourceEntity.java            # 소스 엔티티 (레거시)
 │   │   │               │   └── TargetEntity.java            # 타겟 엔티티 (레거시)
 │   │   │               │
@@ -93,9 +93,9 @@ com.kt.yaap.mig_batch
 │   ├── MigrationConfigMapper                   # migration_config 테이블 조회
 │   └── TargetTableMapper                       # 대상 테이블 조회/업데이트
 │
-├── model                                       # 엔티티 모델
-│   ├── MigrationConfigEntity                   # 마이그레이션 설정
-│   ├── TargetRecordEntity                      # 레코드 엔티티 (PK + 여러 컬럼)
+├── model                                       # 엔티티 모델 (Lombok 적용)
+│   ├── MigrationConfigEntity                   # 마이그레이션 설정 (@Data, @NoArgsConstructor)
+│   ├── TargetRecordEntity                      # 레코드 엔티티 (@Data, 명시적 생성자)
 │   ├── SourceEntity                            # 소스 엔티티 (레거시)
 │   └── TargetEntity                            # 타겟 엔티티 (레거시)
 │

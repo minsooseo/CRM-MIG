@@ -263,10 +263,10 @@ CREATE TABLE tb_user (
 
 ### 6.3 Model
 
-| 클래스 | 설명 |
-|--------|------|
-| `MigrationConfigEntity` | migration_config 테이블 매핑 |
-| `TargetRecordEntity` | 대상 테이블의 레코드 (PK + 컬럼값 + 암호화값) |
+| 클래스 | 설명 | Lombok |
+|--------|------|--------|
+| `MigrationConfigEntity` | migration_config 테이블 매핑<br/>- targetTableName, targetColumnName, pkColumnName | `@Data`, `@NoArgsConstructor` |
+| `TargetRecordEntity` | 대상 테이블의 레코드 (PK + 컬럼값 + 암호화값)<br/>- tableName, pkColumnNames, pkValues<br/>- targetColumnNames, originalValues, encryptedValues<br/>- 명시적 생성자 (Map 필드 초기화, NPE 방지)<br/>- getPkDisplay() 메서드 | `@Data`, 명시적 생성자 |
 
 ### 6.4 Service
 
@@ -340,6 +340,7 @@ ALTER TABLE tb_user ADD COLUMN phone_BAK VARCHAR(20);
 | **ORM** | MyBatis | 1.3.5 |
 | **Database** | PostgreSQL | 9.6+ |
 | **Build** | Maven | 3.6+ |
+| **코드 간소화** | Lombok | (Spring Boot 기본 포함) |
 | **암호화** | SafeDB | (외부 라이브러리) |
 
 ---

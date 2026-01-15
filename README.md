@@ -29,6 +29,7 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 - Spring Batch 4.2.x
 - MyBatis 1.3.5
 - PostgreSQL (JDBC Driver)
+- Lombok (보일러플레이트 코드 제거)
 - SafeDB (실제 라이브러리로 교체 필요)
 
 ### 2. 데이터베이스 설정 (application.yml)
@@ -281,20 +282,22 @@ src/
 ## 주요 모델 설명
 
 ### MigrationConfigEntity
-- 마이그레이션 설정 정보
-- `target_table_name`: 업데이트할 테이블명 (PRIMARY KEY)
-- `target_column_name`: SafeDB 적용할 컬럼명 (쉼표로 구분 가능)
+- **마이그레이션 설정 정보** (Lombok `@Data`, `@NoArgsConstructor` 적용)
+- `targetTableName`: 업데이트할 테이블명 (PRIMARY KEY)
+- `targetColumnName`: SafeDB 적용할 컬럼명 (쉼표로 구분 가능)
+- `pkColumnName`: Primary Key 컬럼명 (동적 조회용, DB 저장 안함)
 - PK는 INFORMATION_SCHEMA에서 동적으로 조회
 
 ### TargetRecordEntity
-- 대상 테이블의 한 레코드 정보
+- **대상 테이블의 실제 레코드 정보** (Lombok `@Data` 적용)
 - `tableName`: 테이블명
-- `targetColumns`: 암호화 대상 컬럼 리스트
-- `pkColumns`: PK 컬럼 리스트
+- `pkColumnNames`: PK 컬럼명 리스트 (복합키 지원)
 - `pkValues`: PK 값 Map
-- `columnValues`: 원본 컬럼 값 Map
+- `targetColumnNames`: 암호화 대상 컬럼명 리스트
+- `originalValues`: 원본 컬럼 값 Map
 - `encryptedValues`: 암호화된 값 Map
-- 복합키 지원
+- 명시적 생성자로 모든 Map 필드 초기화 (NPE 방지)
+- `getPkDisplay()`: PK 값을 문자열로 표시 (로깅용)
 
 ## 참고 자료
 

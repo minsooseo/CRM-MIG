@@ -118,7 +118,6 @@ public Job migrationJob(JobRepository jobRepository, Step createBackupColumnStep
 CREATE TABLE migration_config (
     target_table_name  VARCHAR(100) PRIMARY KEY,  -- 대상 테이블명
     target_column_name VARCHAR(500) NOT NULL,     -- 대상 컬럼 (쉼표 구분)
-    where_condition    VARCHAR(500),              -- WHERE 조건 (선택)
     status             VARCHAR(20) DEFAULT 'ACTIVE', -- 처리 상태
     priority           INTEGER DEFAULT 0          -- 우선순위
 );

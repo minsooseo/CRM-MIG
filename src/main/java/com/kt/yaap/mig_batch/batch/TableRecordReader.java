@@ -68,7 +68,6 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
                     Map<String, Object> params = new HashMap<String, Object>();
                     params.put("tableName", tableName);
                     params.put("columnName", columnName);
-                    params.put("whereCondition", null);
                     params.put("pkColumnNames", pkColumnNames);  // 단일키/복합키 통일
                     
                     List<Map<String, Object>> records = mapper.selectTargetRecords(params);

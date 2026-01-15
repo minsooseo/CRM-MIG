@@ -21,7 +21,6 @@ DROP TABLE IF EXISTS migration_config;
 CREATE TABLE migration_config (
   target_table_name VARCHAR(100) PRIMARY KEY,
   target_column_name VARCHAR(500) NOT NULL,  -- 쉼표로 구분하여 여러 컬럼 지정 가능
-  where_condition VARCHAR(500),
   status VARCHAR(20) DEFAULT 'ACTIVE',
   priority INTEGER DEFAULT 0
 );
@@ -29,7 +28,6 @@ CREATE TABLE migration_config (
 -- 컬럼 설명 추가
 COMMENT ON COLUMN migration_config.target_table_name IS '대상 테이블명 (PRIMARY KEY)';
 COMMENT ON COLUMN migration_config.target_column_name IS '대상 컬럼명 (SafeDB 적용할 컬럼, 쉼표로 구분하여 여러 컬럼 지정 가능)';
-COMMENT ON COLUMN migration_config.where_condition IS 'WHERE 조건 (선택사항)';
 COMMENT ON COLUMN migration_config.status IS '처리 상태 (ACTIVE, INACTIVE, COMPLETE)';
 COMMENT ON COLUMN migration_config.priority IS '처리 우선순위 (낮을수록 먼저 실행)';
 
@@ -39,16 +37,16 @@ COMMENT ON COLUMN migration_config.priority IS '처리 우선순위 (낮을수�
 
 -- customer 테이블 설정 (phone 컬럼 암호화)
 INSERT INTO migration_config 
-  (target_table_name, target_column_name, where_condition, status, priority)
+  (target_table_name, target_column_name, status, priority)
 VALUES
-  ('customer', 'phone', NULL, 'ACTIVE', 1)
+  ('customer', 'phone', 'ACTIVE', 1)
 ON CONFLICT (target_table_name) DO NOTHING;
 
 -- order 테이블 설정 (recipient_phone, recipient_name 컬럼 암호화)
 INSERT INTO migration_config 
-  (target_table_name, target_column_name, where_condition, status, priority)
+  (target_table_name, target_column_name, status, priority)
 VALUES
-  ('order', 'recipient_phone,recipient_name', NULL, 'ACTIVE', 2)
+  ('order', 'recipient_phone,recipient_name', 'ACTIVE', 2)
 ON CONFLICT (target_table_name) DO NOTHING;
 
 -- 확인

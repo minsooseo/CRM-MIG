@@ -25,7 +25,6 @@ CREATE DATABASE migration_db;
 CREATE TABLE migration_config (
   target_table_name VARCHAR(100) PRIMARY KEY,
   target_column_name VARCHAR(500) NOT NULL,
-  where_condition VARCHAR(500),
   status VARCHAR(20) DEFAULT 'ACTIVE',
   priority INTEGER DEFAULT 0
 );

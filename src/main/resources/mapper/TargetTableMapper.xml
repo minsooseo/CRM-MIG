@@ -3,19 +3,6 @@
 
 <mapper namespace="com.kt.yaap.mig_batch.mapper.TargetTableMapper">
 
-    <!-- INFORMATION_SCHEMA에서 Primary Key 컬럼명 조회 (PostgreSQL) - 단일키용 -->
-    <select id="selectPrimaryKeyColumn" resultType="string">
-        SELECT kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu 
-            ON tc.constraint_name = kcu.constraint_name
-            AND tc.table_schema = kcu.table_schema
-        WHERE tc.table_schema = COALESCE(#{params.schemaName}, 'public')
-          AND tc.table_name = #{params.tableName}
-          AND tc.constraint_type = 'PRIMARY KEY'
-        ORDER BY kcu.ordinal_position
-        LIMIT 1
-    </select>
 
     <!-- INFORMATION_SCHEMA에서 모든 Primary Key 컬럼명 조회 (복합키 지원) -->
     <select id="selectPrimaryKeyColumns" resultType="string">
@@ -40,9 +27,6 @@
             #{params.tableName} AS target_table_name,
             #{params.columnName} AS target_column_name
         FROM ${params.tableName}
-        <if test="params.whereCondition != null and params.whereCondition != ''">
-            WHERE ${params.whereCondition}
-        </if>
         ORDER BY 
             <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
                 ${pkCol}

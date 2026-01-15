@@ -31,7 +31,7 @@ public interface TargetTableMapper {
     /**
      * 대상 테이블에서 PK와 컬럼 값 조회 (복합키 지원)
      * 
-     * @param params 조회 파라미터 (tableName, columnName, pkColumnName 또는 pkColumnNames, whereCondition)
+     * @param params 조회 파라미터 (tableName, columnName, pkColumnNames)
      * @return PK와 컬럼 값 목록 (Map 형태로 반환, Java에서 TargetRecordEntity로 변환)
      */
     List<Map<String, Object>> selectTargetRecords(@Param("params") Map<String, Object> params);

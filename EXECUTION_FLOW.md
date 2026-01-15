@@ -275,7 +275,6 @@ ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 CREATE TABLE migration_config (
     target_table_name VARCHAR(100) PRIMARY KEY,
     target_column_name VARCHAR(500) NOT NULL,  -- 쉼표로 구분: "phone,email"
-    where_condition VARCHAR(500),              -- 선택사항
     status VARCHAR(20) DEFAULT 'ACTIVE',       -- 'ACTIVE', 'INACTIVE', 'COMPLETE'
     priority INTEGER DEFAULT 0                 -- 우선순위 (낮을수록 먼저 실행)
 );

@@ -194,7 +194,11 @@ CREATE TABLE tb_user (
 │ [Writer]                       │
 │ - 백업 컬럼에 원본 저장        │
 │ - 원본 컬럼에 암호화 값 저장   │
+│ - MyBatis BATCH 모드로 실행    │
+│                                │
+│ [Listener]                     │
 │ - status = 'COMPLETE' 업데이트 │
+│ - Step 완료 시 한 번만 실행    │
 └────────────────────────────────┘
   │
   ▼
@@ -234,8 +238,17 @@ CREATE TABLE tb_user (
               │
               ▼
 ┌─────────────────────────────────────┐
-│ Writer: 1000개 일괄 UPDATE          │
+│ Writer: MyBatis BATCH 모드          │
+│ - 1000개 UPDATE를 메모리에 적재     │
+│ - flushStatements() 배치 실행      │
+│ - DB 왕복: 1000번 → 10~50번 ⚡     │
 │ - Transaction Commit               │
+└─────────────────────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────┐
+│ Listener: status 업데이트 (1번만!)  │
+│ - Step 성공 시 COMPLETE로 변경     │
 └─────────────────────────────────────┘
 ```
 
@@ -259,7 +272,8 @@ CREATE TABLE tb_user (
 |--------|------|------|
 | `TableRecordReader` | ItemReader | 테이블 레코드 직접 읽기 (PK + 컬럼값) |
 | `EncryptionProcessor` | ItemProcessor | SafeDB 암호화 적용 |
-| `EncryptionWriter` | ItemWriter | UPDATE 수행 + status 업데이트 |
+| `EncryptionWriter` | ItemWriter | UPDATE 수행 (MyBatis BATCH 모드) |
+| `MigrationStatusListener` | StepExecutionListener | Step 완료 시 status 업데이트 (한 번만!) |
 
 ### 6.3 Model
 

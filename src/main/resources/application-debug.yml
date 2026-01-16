@@ -1,0 +1,42 @@
+# ============================================
+# Debug 환경 설정 (문제 해결용)
+# 실행: --spring.profiles.active=debug
+# 주의: 성능이 매우 느려집니다! 디버깅 용도로만 사용
+# ============================================
+
+spring:
+  # 데이터소스 설정 (로컬)
+  datasource:
+    url: jdbc:postgresql://localhost:5432/migration_db
+    username: postgres
+    password: password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+
+# 로깅 설정 (전체 DEBUG - 디버깅용)
+logging:
+  level:
+    root: INFO
+    com.kt.yaap.mig_batch: DEBUG              # 모든 애플리케이션 로그
+    com.kt.yaap.mig_batch.config: DEBUG
+    com.kt.yaap.mig_batch.batch: DEBUG
+    org.springframework.batch: DEBUG          # Batch 상세 로그
+    com.kt.yaap.mig_batch.mapper: DEBUG       # SQL 쿼리 전체
+    org.mybatis: DEBUG                        # MyBatis 내부 로그
+    org.apache.ibatis: DEBUG                  # 파라미터 바인딩 (TRACE는 제외)
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/crm-migration-debug.log
+    max-size: 500MB
+    max-history: 3
+
+# 배치 실행 설정 (디버깅용 - 작은 청크)
+migration:
+  chunk-size: 100  # 작은 청크로 상세 확인
+
+# SafeDB 설정
+safedb:
+  enabled: true

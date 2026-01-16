@@ -82,13 +82,13 @@ ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 ### Reader → Processor → Writer 흐름
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Reader    │ --> │  Processor   │ --> │   Writer    │
-│             │     │              │     │             │
-│ 실제 테이블 │     │ SafeDB 암호화│     │ DB Update   │
-│ 레코드 읽기 │     │ 처리         │     │ + status    │
-│ (PK + 컬럼) │     │ (복합키 지원)│     │ 업데이트    │
-└─────────────┘     └──────────────┘     └─────────────┘
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
+│   Reader    │ --> │  Processor   │ --> │   Writer    │ --> │  Listener    │
+│             │     │              │     │             │     │              │
+│ 실제 테이블 │     │ SafeDB 암호화│     │ DB Update   │     │ status 업데이트│
+│ 레코드 읽기 │     │ 처리         │     │ (BATCH 모드)│     │ (Step 완료 시)│
+│ (PK + 컬럼) │     │ (복합키 지원)│     │             │     │              │
+└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
 ```
 
 ---
@@ -185,72 +185,114 @@ ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 **역할**: 암호화된 값을 대상 테이블에 업데이트 (원본 값 백업 포함)
 
 ```
-1. Chunk 단위로 여러 TargetRecordEntity 받음
-       ↓
-2. 테이블별로 그룹화
-       ↓
+1. Chunk 단위로 여러 TargetRecordEntity 받음 (예: 1000건)
+      ↓
+2. MyBatis BATCH 모드로 SqlSession 열기
+  - ExecutorType.BATCH 사용
+  - 여러 UPDATE를 메모리에 적재 후 한 번에 실행
+      ↓
 3. 각 레코드에 대해:
-   a) 여러 컬럼 정보를 리스트로 구성
-      columnUpdates: [
-        {columnName: "name", backupColumnName: "name_bak", 
-         originalValue: "홍길동", encryptedValue: "encrypted_name_1"},
-        {columnName: "email", backupColumnName: "email_bak",
-         originalValue: "test@example.com", encryptedValue: "encrypted_email_1"}
-      ]
-       ↓
-   b) 한 번에 여러 컬럼 업데이트 (TargetTableMapper.updateTargetRecordWithMultipleColumns)
-      UPDATE TB_USER
-      SET 
-        name_bak = '홍길동',
-        name = 'encrypted_name_1',
-        email_bak = 'test@example.com',
-        email = 'encrypted_email_1'
-      WHERE user_id = 1
-       ↓
-4. 처리 완료된 테이블 목록 수집
-       ↓
-5. 각 테이블의 status를 'COMPLETE'로 업데이트
-   UPDATE migration_config
-   SET status = 'COMPLETE'
-   WHERE target_table_name = {tableName}
-       ↓
-6. Chunk 단위로 트랜잭션 커밋 (데이터 업데이트 + status 업데이트)
-   (에러 발생 시 롤백)
+  a) 여러 컬럼 정보를 리스트로 구성
+     columnUpdates: [
+       {columnName: "name", backupColumnName: "name_bak", 
+        originalValue: "홍길동", encryptedValue: "encrypted_name_1"},
+       {columnName: "email", backupColumnName: "email_bak",
+        originalValue: "test@example.com", encryptedValue: "encrypted_email_1"}
+     ]
+      ↓
+  b) UPDATE 쿼리 등록 (메모리에 적재만 하고 아직 실행 안 함)
+     UPDATE TB_USER
+     SET 
+       name_bak = '홍길동',
+       name = 'encrypted_name_1',
+       email_bak = 'test@example.com',
+       email = 'encrypted_email_1'
+     WHERE user_id = 1
+      ↓
+4. 모든 레코드 처리 완료 후:
+  a) flushStatements() 호출 → 배치 실행
+     - 1000건의 UPDATE가 10~50번의 DB 왕복으로 실행
+     - 성능: 1000번 왕복 → 10~50번 왕복 (약 50배 빠름!)
+      ↓
+  b) 트랜잭션 커밋
+     - 에러 발생 시 롤백
 ```
 
+**성능 최적화**:
+- ✅ MyBatis BATCH 모드: DB 왕복 횟수 대폭 감소 (1000건당 10~50회)
+- ✅ 여러 컬럼을 한 번의 UPDATE로 처리
+- ✅ 복합키 지원: WHERE 절에 모든 PK 컬럼 조건 포함
+
 **주의사항**:
-- 여러 컬럼을 한 번의 UPDATE로 처리하여 성능 최적화
-- 복합키 지원: WHERE 절에 모든 PK 컬럼 조건 포함
-- 처리 완료 후 status를 'COMPLETE'로 자동 업데이트
-- status 업데이트 실패 시 전체 롤백으로 데이터 무결성 보장
 - _bak 컬럼은 소문자 사용 (PostgreSQL 호환)
+- status 업데이트는 Writer가 아닌 **MigrationStatusListener**에서 처리 (단일 책임 원칙)
+
+---
+
+### 🎧 Listener 단계 (`MigrationStatusListener`)
+
+**역할**: Step 완료 시 migration_config 상태를 'COMPLETE'로 업데이트 (한 번만!)
+
+```
+Step 시작 (beforeStep):
+  - 로그 출력: "Starting encryption step for table: {tableName}"
+      ↓
+Reader → Processor → Writer 실행 (청크별 반복)
+      ↓
+Step 완료 (afterStep):
+  1. Step 실행 결과 확인
+     - ExitStatus == COMPLETED인 경우만 진행
+      ↓
+  2. migration_config status 업데이트 (한 번만!)
+     UPDATE migration_config
+     SET status = 'COMPLETE'
+     WHERE target_table_name = {tableName}
+      ↓
+  3. 업데이트 결과 로그 출력
+     - 성공: "✅ Updated migration_config status to COMPLETE"
+     - 실패: "⚠️ No migration_config record found" (테스트 테이블 등)
+      ↓
+  4. ExitStatus 반환
+```
+
+**주요 특징**:
+- ✅ **Step 완료 시 한 번만** status 업데이트 (Writer는 청크마다 실행되므로 비효율적)
+- ✅ Step 실패 시 status 업데이트 안 함 → 재실행 가능
+- ✅ status 업데이트 실패해도 Step은 성공으로 처리 (데이터는 이미 처리됨)
+- ✅ 단일 책임 원칙: Writer는 데이터 업데이트, Listener는 상태 관리
 
 ---
 
 ## ✅ 처리 완료 후 자동 상태 업데이트
 
 ### 실행 위치
-- **클래스**: `EncryptionWriter.write()`
-- **시점**: 각 테이블별 데이터 업데이트 완료 후
+- **클래스**: `MigrationStatusListener.afterStep()`
+- **시점**: 각 테이블별 Step 완료 후 (한 번만!)
 
 ### 처리 내용
 ```
-1. 처리 완료된 테이블 목록 수집
-       ↓
-2. 각 테이블의 migration_config.status를 'COMPLETE'로 업데이트
-   UPDATE migration_config
-   SET status = 'COMPLETE'
-   WHERE target_table_name = {tableName}
-       ↓
-3. 같은 트랜잭션 내에서 커밋
-   - 데이터 업데이트와 status 업데이트가 함께 처리됨
-   - 실패 시 전체 롤백
+1. Step 실행 결과 확인
+  - ExitStatus == COMPLETED인 경우만 진행
+      ↓
+2. migration_config.status를 'COMPLETE'로 업데이트
+  UPDATE migration_config
+  SET status = 'COMPLETE'
+  WHERE target_table_name = {tableName}
+      ↓
+3. 업데이트 결과 확인
+  - 성공: 로그 출력 + 처리된 레코드 수 표시
+  - 실패: 워닝 로그 (테스트 테이블 등)
+      ↓
+4. ExitStatus 반환
+  - status 업데이트 실패해도 Step은 성공으로 처리
+  - (데이터는 이미 정상 처리되었으므로)
 ```
 
 ### 효과
 - ✅ 재실행 시 'COMPLETE' 상태인 테이블은 자동 제외
-- ✅ 데이터 무결성 보장
 - ✅ 중복 처리 방지
+- ✅ 성능 최적화: Writer는 청크마다 실행되지만 status는 Step당 1회만 업데이트
+- ✅ 단일 책임 원칙: Writer(데이터 처리) / Listener(상태 관리) 분리
 
 ---
 

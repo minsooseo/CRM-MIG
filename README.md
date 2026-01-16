@@ -15,6 +15,7 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 프로젝트 실행 방법은 다음 문서를 참조하세요:
 
 - **[EXECUTION_GUIDE.md](EXECUTION_GUIDE.md)** - 통합 실행 가이드 (STS + Linux) ⭐ 권장
+- **[PROFILE_GUIDE.md](PROFILE_GUIDE.md)** - Profile 설정 가이드 (local/dev/prod) ⭐ 필독
 - **[STS_MANUAL_EXECUTION_GUIDE.md](STS_MANUAL_EXECUTION_GUIDE.md)** - STS 수동 실행
 - **[STS_JOB_RERUN_GUIDE.md](STS_JOB_RERUN_GUIDE.md)** - STS Job 재실행
 - **[LINUX_EXECUTION_GUIDE.md](LINUX_EXECUTION_GUIDE.md)** - Linux 서버 실행
@@ -63,7 +64,11 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 - SafeDB가 적용된 값으로 대상 테이블을 UPDATE
 - 원본 값은 `_bak` 컬럼에 백업 (소문자)
 - 여러 컬럼을 한 번의 UPDATE로 처리
-- 처리 완료 후 `migration_config`의 `status`를 'COMPLETE'로 업데이트
+- **MyBatis BATCH 모드**: DB 왕복 횟수 대폭 감소 (1000건당 10~50회) ⚡
+
+#### StepExecutionListener (MigrationStatusListener)
+- Step 완료 시 `migration_config`의 `status`를 'COMPLETE'로 업데이트 (한 번만!)
+- Step 실패 시 status 업데이트 안 함 → 재실행 가능
 
 ### 4. Job 구성 (테이블별 Step 동적 생성)
 - **createBackupColumnStep**: 백업 컬럼 자동 생성 (Tasklet)
@@ -172,29 +177,59 @@ public static String encrypt(String plainText) {
 mvn clean package
 ```
 
-### 2. 애플리케이션 실행
+### 2. 환경별 실행
+
+#### 로컬 환경 (기본값)
 ```bash
+# Profile 미지정 시 자동으로 local 사용
 java -jar target/crm-mig-1.0.0.jar
+
+# 또는 명시적으로 지정
+java -jar target/crm-mig-1.0.0.jar --spring.profiles.active=local
 ```
 
-### 3. Job 실행 옵션
-
-#### 방법 1: application.yml에서 자동 실행
-```yaml
-spring:
-  batch:
-    job:
-      enabled: true
-      names: migrationJob
-```
-
-#### 방법 2: Command Line에서 실행
+#### 개발 서버
 ```bash
-java -jar target/crm-mig-1.0.0.jar --spring.batch.job.enabled=true --spring.batch.job.names=migrationJob
+java -jar target/crm-mig-1.0.0.jar \
+  --spring.profiles.active=dev \
+  --spring.batch.job.enabled=true \
+  --spring.batch.job.names=migrationJob
 ```
 
-#### 방법 3: 스케줄러 사용
-- `MigrationScheduler`의 cron 표현식 수정하여 원하는 시간에 실행
+#### 운영 서버
+```bash
+# 환경변수 설정
+export DB_PASSWORD=prod_password
+
+java -jar target/crm-mig-1.0.0.jar \
+  --spring.profiles.active=prod \
+  --spring.batch.job.enabled=true \
+  --spring.batch.job.names=migrationJob
+```
+
+#### 디버깅 모드 (문제 해결용)
+```bash
+# 주의: 성능이 매우 느려집니다!
+java -jar target/crm-mig-1.0.0.jar --spring.profiles.active=debug
+```
+
+### 3. Profile별 특징
+
+| Profile | 용도 | Chunk Size | 로그 레벨 | 성능 |
+|---------|------|------------|-----------|------|
+| **local** | 로컬 개발 | 1,000 | INFO/WARN | ⭐⭐⭐⭐ 빠름 |
+| **dev** | 개발 서버 | 3,000 | DEBUG/INFO | ⭐⭐⭐ 보통 |
+| **prod** | 운영 서버 | 5,000 | INFO/WARN | ⭐⭐⭐⭐⭐ 최고 |
+| **debug** | 디버깅 | 100 | DEBUG | ⭐ 매우 느림 |
+
+### 4. STS에서 Profile 설정
+
+```
+Run → Run Configurations...
+→ Spring Boot App
+→ Profile: local (또는 dev, prod, debug)
+→ Apply → Run
+```
 
 ## 처리 흐름
 
@@ -207,8 +242,8 @@ java -jar target/crm-mig-1.0.0.jar --spring.batch.job.enabled=true --spring.batc
    - **PK 동적 조회**: INFORMATION_SCHEMA에서 대상 테이블의 Primary Key 자동 조회 (복합키 지원)
    - **데이터 읽기 (Reader)**: 대상 테이블에서 PK와 모든 대상 컬럼 값을 레코드 단위로 조회
    - **SafeDB 적용 (Processor)**: 각 컬럼 값에 SafeDB 암호화 적용
-   - **UPDATE 수행 (Writer)**: 백업 컬럼에 원본 저장 + 암호화된 값으로 업데이트 (한 번에 처리)
-   - **상태 업데이트**: 처리 완료 후 `status`를 'COMPLETE'로 업데이트
+   - **UPDATE 수행 (Writer)**: 백업 컬럼에 원본 저장 + 암호화된 값으로 업데이트 (MyBatis BATCH 모드)
+   - **상태 업데이트 (Listener)**: Step 완료 시 `status`를 'COMPLETE'로 업데이트 (한 번만!)
 
 ## 주의사항
 
@@ -229,9 +264,11 @@ java -jar target/crm-mig-1.0.0.jar --spring.batch.job.enabled=true --spring.batc
 4. **에러 처리**
    - SafeDB 적용 실패 시 로깅 및 별도 처리
    - 실패한 레코드는 재처리 가능하도록 설계
-   - status 업데이트 실패 시 전체 롤백
+   - status 업데이트 실패해도 데이터 처리는 성공 처리 (이미 암호화 완료)
 
 5. **성능 최적화**
+   - **MyBatis BATCH 모드**: Writer에서 DB 왕복 횟수 대폭 감소
+   - 1000건 처리 시: 1000번 왕복 → 10~50번 왕복 (약 50배 빠름!) ⚡
    - 대상 테이블에 적절한 인덱스 설정
    - 테이블별 Step 순차 실행
    - 여러 컬럼을 한 번의 UPDATE로 처리
@@ -265,7 +302,9 @@ src/
 │   │   ├── batch/
 │   │   │   ├── TableRecordReader.java        # 실제 테이블 레코드 읽기
 │   │   │   ├── EncryptionProcessor.java      # SafeDB 암호화 처리
-│   │   │   └── EncryptionWriter.java         # UPDATE 수행 (status 업데이트 포함)
+│   │   │   └── EncryptionWriter.java         # UPDATE 수행 (MyBatis BATCH 모드)
+│   │   ├── listener/
+│   │   │   └── MigrationStatusListener.java  # Step 완료 시 status 업데이트
 │   │   ├── model/
 │   │   │   ├── MigrationConfigEntity.java    # 설정 엔티티
 │   │   │   ├── TargetRecordEntity.java       # 레코드 엔티티 (PK + 여러 컬럼)

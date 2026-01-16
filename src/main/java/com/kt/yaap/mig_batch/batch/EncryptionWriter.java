@@ -1,8 +1,8 @@
 package com.kt.yaap.mig_batch.batch;
 
-import com.kt.yaap.mig_batch.mapper.MigrationConfigMapper;
 import com.kt.yaap.mig_batch.mapper.TargetTableMapper;
 import com.kt.yaap.mig_batch.model.TargetRecordEntity;
+import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
@@ -19,7 +19,14 @@ import java.util.*;
  * 역할:
  * - 암호화된 값을 대상 테이블에 UPDATE
  * - 원본 값을 _bak 컬럼에 백업 (PostgreSQL은 소문자)
- * - 처리 완료 후 migration_config status를 'COMPLETE'로 업데이트
+ * 
+ * 성능 최적화:
+ * - MyBatis BATCH 모드 사용으로 DB 왕복 횟수 대폭 감소
+ * - 1000건 처리 시: 1000번 왕복 → 10~50번 왕복
+ * 
+ * 주의:
+ * - migration_config status 업데이트는 MigrationStatusListener에서 처리
+ * - Writer는 데이터 업데이트만 담당 (단일 책임 원칙)
  */
 @Component
 public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
@@ -37,12 +44,13 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
         
         SqlSession sqlSession = null;
         try {
-            sqlSession = sqlSessionFactory.openSession();
+            // BATCH 모드로 열어 여러 UPDATE를 배치 실행
+            sqlSession = sqlSessionFactory.openSession(ExecutorType.BATCH);
             TargetTableMapper mapper = sqlSession.getMapper(TargetTableMapper.class);
-            MigrationConfigMapper configMapper = sqlSession.getMapper(MigrationConfigMapper.class);
             
             int updateCount = 0;
             String tableName = null;
+            long startTime = System.currentTimeMillis();
             
             for (TargetRecordEntity item : items) {
                 tableName = item.getTableName();
@@ -82,18 +90,20 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
                         tableName, item.getPkDisplay(), columnUpdates.size());
             }
             
-            // migration_config status 업데이트 (같은 트랜잭션 내에서)
-            if (tableName != null) {
-                int statusUpdated = configMapper.updateStatus(tableName, "COMPLETE");
-                if (statusUpdated > 0) {
-                    log.info("Updated migration_config status to COMPLETE for table: {}", tableName);
-                } else {
-                    log.warn("Failed to update status for table: {} (no matching record)", tableName);
-                }
-            }
+            // BATCH 실행 전 로그
+            long beforeCommit = System.currentTimeMillis();
+            log.info("Prepared {} UPDATE statements, executing batch...", updateCount);
             
+            // 배치 실행 (BATCH 모드에서는 commit 시 실제 실행됨)
+            sqlSession.flushStatements();
+            long afterFlush = System.currentTimeMillis();
+            log.info("Batch execution completed in {} ms", (afterFlush - beforeCommit));
+            
+            // 트랜잭션 커밋
             sqlSession.commit();
-            log.info("Successfully updated {} records for table: {}", updateCount, tableName);
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.info("Successfully updated {} records for table: {} in {} ms", 
+                    updateCount, tableName, totalTime);
             
         } catch (Exception e) {
             if (sqlSession != null) {

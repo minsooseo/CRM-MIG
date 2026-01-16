@@ -1,0 +1,46 @@
+# ============================================
+# Dev 환경 설정 (개발 서버)
+# 실행: --spring.profiles.active=dev
+# ============================================
+
+spring:
+  # 데이터소스 설정 (개발 서버 PostgreSQL)
+  datasource:
+    url: jdbc:postgresql://dev-db-server:5432/migration_db
+    username: dev_user
+    password: ${DB_PASSWORD}  # 환경변수로 주입
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+# 로깅 설정 (개발 서버 - 디버깅 가능)
+logging:
+  level:
+    root: INFO
+    com.kt.yaap.mig_batch: DEBUG              # 개발 서버에서는 DEBUG
+    com.kt.yaap.mig_batch.config: DEBUG
+    com.kt.yaap.mig_batch.batch: INFO
+    org.springframework.batch: INFO
+    com.kt.yaap.mig_batch.mapper: INFO        # SQL 쿼리 확인
+    org.mybatis: WARN
+    org.apache.ibatis: WARN
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /opt/crm-mig/logs/crm-migration-dev.log
+    max-size: 500MB
+    max-history: 30
+
+# 배치 실행 설정 (개발 서버)
+migration:
+  chunk-size: 3000  # 중간 크기
+
+# SafeDB 설정 (개발 서버)
+safedb:
+  enabled: true
+  config-file: classpath:safedb-dev.properties

@@ -50,7 +50,6 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
             
             int updateCount = 0;
             String tableName = null;
-            long startTime = System.currentTimeMillis();
             
             for (TargetRecordEntity item : items) {
                 tableName = item.getTableName();
@@ -89,21 +88,12 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
                 log.debug("Updated record: table={}, pk={}, columns={}", 
                         tableName, item.getPkDisplay(), columnUpdates.size());
             }
-            
-            // BATCH 실행 전 로그
-            long beforeCommit = System.currentTimeMillis();
-            log.info("Prepared {} UPDATE statements, executing batch...", updateCount);
-            
-            // 배치 실행 (BATCH 모드에서는 commit 시 실제 실행됨)
-            sqlSession.flushStatements();
-            long afterFlush = System.currentTimeMillis();
-            log.info("Batch execution completed in {} ms", (afterFlush - beforeCommit));
-            
+                        
             // 트랜잭션 커밋
             sqlSession.commit();
-            long totalTime = System.currentTimeMillis() - startTime;
-            log.info("Successfully updated {} records for table: {} in {} ms", 
-                    updateCount, tableName, totalTime);
+            
+            log.info("Successfully updated {} records for table: {}", 
+                    updateCount, tableName);
             
         } catch (Exception e) {
             if (sqlSession != null) {

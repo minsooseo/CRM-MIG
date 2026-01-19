@@ -29,7 +29,6 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
     @Override
     public TargetRecordEntity process(TargetRecordEntity item) throws Exception {
         Map<String, String> encryptedValues = new HashMap<String, String>();
-        boolean hasValue = false;
         int encryptedCount = 0;
         
         // 각 컬럼의 값을 암호화
@@ -40,7 +39,6 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
                 try {
                     String encryptedValue = safeDBUtil.encrypt(originalValue);
                     encryptedValues.put(columnName, encryptedValue);
-                    hasValue = true;
                     encryptedCount++;
                     
                     log.debug("Encrypted: table={}, column={}, pk={}", 
@@ -57,7 +55,7 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
         }
         
         // 암호화할 값이 하나도 없으면 null 반환 (Writer로 전달 안 됨)
-        if (!hasValue) {
+        if (encryptedCount == 0) {
             log.debug("No values to encrypt for pk={}", item.getPkDisplay());
             return null;
         }

@@ -8,7 +8,6 @@ import com.kt.yaap.mig_batch.mapper.MigrationConfigMapper;
 import com.kt.yaap.mig_batch.model.TargetRecordEntity;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,7 +22,6 @@ import java.util.List;
  * Job 설정은 MigrationJobConfig에서 관리합니다.
  */
 @Configuration
-@EnableBatchProcessing
 public class BatchConfig {
 
     @Value("${migration.chunk-size:1000}")

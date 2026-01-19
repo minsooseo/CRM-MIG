@@ -79,15 +79,13 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
                         for (String pkCol : pkColumnNames) {
                             String key = "pk_" + pkCol.toLowerCase();
                             Object value = record.get(key);
+                            
                             if (value == null) {
-                                // 대소문자 무관하게 검색
-                                for (String mapKey : record.keySet()) {
-                                    if (mapKey.equalsIgnoreCase(key)) {
-                                        value = record.get(mapKey);
-                                        break;
-                                    }
-                                }
+                                throw new RuntimeException(
+                                    String.format("PK value not found: table=%s, pk_column=%s, key=%s", 
+                                        tableName, pkCol, key));
                             }
+                            
                             pkValues.put(pkCol, value);
                         }
                         

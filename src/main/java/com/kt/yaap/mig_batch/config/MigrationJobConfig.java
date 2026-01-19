@@ -96,9 +96,6 @@ public class MigrationJobConfig {
         Step firstStep = batchConfig.createTableEncryptionStep(
             firstEntry.getKey(), firstEntry.getValue());
         
-        log.info("Starting with encryption step for table: {}, columns: {}", 
-            firstEntry.getKey(), firstEntry.getValue());
-        
         SimpleJobBuilder jobBuilder = jobBuilderFactory.get("migrationJob")
                 .start(firstStep);
         
@@ -109,9 +106,7 @@ public class MigrationJobConfig {
             List<String> columns = entry.getValue();
             
             Step tableStep = batchConfig.createTableEncryptionStep(tableName, columns);
-            
             jobBuilder = jobBuilder.next(tableStep);
-            log.info("Added encryption step for table: {}, columns: {}", tableName, columns);
         }
         
         return jobBuilder.build();

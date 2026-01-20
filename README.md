@@ -16,6 +16,7 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 
 - **[EXECUTION_GUIDE.md](EXECUTION_GUIDE.md)** - 통합 실행 가이드 (STS + Linux) ⭐ 권장
 - **[PROFILE_GUIDE.md](PROFILE_GUIDE.md)** - Profile 설정 가이드 (local/dev/prod) ⭐ 필독
+- **[JVM_MEMORY_GUIDE.md](JVM_MEMORY_GUIDE.md)** - JVM 메모리 설정 가이드 (Chunk Size별 권장 메모리) ⭐ 필독
 - **[STS_MANUAL_EXECUTION_GUIDE.md](STS_MANUAL_EXECUTION_GUIDE.md)** - STS 수동 실행
 - **[STS_JOB_RERUN_GUIDE.md](STS_JOB_RERUN_GUIDE.md)** - STS Job 재실행
 - **[LINUX_EXECUTION_GUIDE.md](LINUX_EXECUTION_GUIDE.md)** - Linux 서버 실행

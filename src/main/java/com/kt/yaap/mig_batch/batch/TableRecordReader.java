@@ -17,6 +17,11 @@ import java.util.*;
  * 한 테이블의 여러 컬럼을 함께 처리하므로:
  * - read_count = 실제 처리한 레코드 수
  * - Step 개수 = 테이블 개수
+ * 
+ * 성능 최적화:
+ * - 단일 쿼리로 모든 컬럼을 한 번에 조회 (컬럼별 반복 쿼리 제거)
+ * - 3개 컬럼 처리 시: 3번 쿼리 → 1번 쿼리 (약 50~67% 성능 개선)
+ * - 네트워크 왕복 및 DB 스캔 횟수 대폭 감소
  */
 public class TableRecordReader implements ItemReader<TargetRecordEntity> {
 
@@ -61,55 +66,49 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
                 log.info("Table: {}, PK columns: {}, Target columns: {}", 
                         tableName, pkColumnNames, targetColumns);
                 
-                // 2. 각 컬럼별로 레코드를 조회하고 PK 기준으로 병합
-                Map<String, TargetRecordEntity> recordMap = new LinkedHashMap<String, TargetRecordEntity>();
+                // 2. 모든 컬럼을 한 번에 조회 (단일 쿼리 - 성능 최적화)
+                Map<String, Object> params = new HashMap<String, Object>();
+                params.put("tableName", tableName);
+                params.put("pkColumnNames", pkColumnNames);
+                params.put("targetColumnNames", targetColumns);
                 
-                for (String columnName : targetColumns) {
-                    Map<String, Object> params = new HashMap<String, Object>();
-                    params.put("tableName", tableName);
-                    params.put("columnName", columnName);
-                    params.put("pkColumnNames", pkColumnNames);  // 단일키/복합키 통일
-                    
-                    List<Map<String, Object>> records = mapper.selectTargetRecords(params);
-                    
-                    // 각 레코드를 PK 기준으로 Entity에 추가
-                    for (Map<String, Object> record : records) {
-                        // PK 값 추출 (단일키/복합키 통일)
-                        Map<String, Object> pkValues = new HashMap<String, Object>();
-                        for (String pkCol : pkColumnNames) {
-                            String key = "pk_" + pkCol.toLowerCase();
-                            Object value = record.get(key);
-                            
-                            if (value == null) {
-                                throw new RuntimeException(
-                                    String.format("PK value not found: table=%s, pk_column=%s, key=%s", 
-                                        tableName, pkCol, key));
-                            }
-                            
-                            pkValues.put(pkCol, value);
+                List<Map<String, Object>> records = mapper.selectAllTargetColumns(params);
+                
+                // 각 레코드를 Entity로 변환
+                List<TargetRecordEntity> entityList = new ArrayList<TargetRecordEntity>();
+                
+                for (Map<String, Object> record : records) {
+                    // PK 값 추출 (단일키/복합키 통일)
+                    Map<String, Object> pkValues = new HashMap<String, Object>();
+                    for (String pkCol : pkColumnNames) {
+                        String key = "pk_" + pkCol.toLowerCase();
+                        Object value = record.get(key);
+                        
+                        if (value == null) {
+                            throw new RuntimeException(
+                                String.format("PK value not found: table=%s, pk_column=%s, key=%s", 
+                                    tableName, pkCol, key));
                         }
                         
-                        // PK를 키로 사용 (문자열로 변환)
-                        String pkKey = pkValues.toString();
-                        
-                        // 기존 Entity가 없으면 생성
-                        TargetRecordEntity entity = recordMap.get(pkKey);
-                        if (entity == null) {
-                            entity = new TargetRecordEntity();
-                            entity.setTableName(tableName);
-                            entity.setPkColumnNames(pkColumnNames);
-                            entity.setPkValues(pkValues);
-                            entity.setTargetColumnNames(targetColumns);
-                            recordMap.put(pkKey, entity);
-                        }
-                        
-                        // 현재 컬럼의 원본 값 추가
-                        String originalValue = (String) record.get("original_value");
+                        pkValues.put(pkCol, value);
+                    }
+                    
+                    // Entity 생성
+                    TargetRecordEntity entity = new TargetRecordEntity();
+                    entity.setTableName(tableName);
+                    entity.setPkColumnNames(pkColumnNames);
+                    entity.setPkValues(pkValues);
+                    entity.setTargetColumnNames(targetColumns);
+                    
+                    // 모든 대상 컬럼의 원본 값 추가
+                    for (String columnName : targetColumns) {
+                        Object value = record.get(columnName);
+                        String originalValue = value != null ? value.toString() : null;
                         entity.getOriginalValues().put(columnName, originalValue);
                     }
+                    
+                    entityList.add(entity);
                 }
-                
-                List<TargetRecordEntity> entityList = new ArrayList<TargetRecordEntity>(recordMap.values());
                 recordIterator = entityList.iterator();
                 initialized = true;
                 

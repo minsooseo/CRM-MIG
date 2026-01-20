@@ -33,8 +33,22 @@ public interface TargetTableMapper {
      * 
      * @param params 조회 파라미터 (tableName, columnName, pkColumnNames)
      * @return PK와 컬럼 값 목록 (Map 형태로 반환, Java에서 TargetRecordEntity로 변환)
+     * @deprecated 성능 개선을 위해 selectAllTargetColumns 사용 권장 (단일 쿼리)
      */
+    @Deprecated
     List<Map<String, Object>> selectTargetRecords(@Param("params") Map<String, Object> params);
+
+    /**
+     * 대상 테이블에서 PK와 모든 대상 컬럼을 한 번에 조회 (단일 쿼리 - 성능 최적화)
+     * 
+     * @param params 조회 파라미터
+     *               - tableName: 대상 테이블명
+     *               - pkColumnNames: PK 컬럼명 리스트
+     *               - targetColumnNames: 암호화 대상 컬럼명 리스트
+     * @return PK와 모든 컬럼 값 목록 (Map 형태로 반환)
+     *         각 Map은 PK 컬럼들과 대상 컬럼들의 값을 포함
+     */
+    List<Map<String, Object>> selectAllTargetColumns(@Param("params") Map<String, Object> params);
 
     /**
      * 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리 - foreach 사용)
@@ -43,7 +57,7 @@ public interface TargetTableMapper {
      *               columnUpdates는 Map 리스트로 각 항목은 {columnName, backupColumnName, originalValue, encryptedValue} 포함
      * @return 업데이트된 행 수
      */
-    int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
+    //int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
 
     /**
      * 대상 테이블 벌크 업데이트 (여러 레코드를 한 번의 SQL로 처리)

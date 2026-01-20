@@ -47,6 +47,46 @@
             </foreach>
     </update>
 
+    <!-- 대상 테이블 벌크 업데이트 (여러 레코드를 한 번의 SQL로 처리, 단일키/복합키 통일 처리) -->
+    <!-- 
+        성능 최적화: PostgreSQL의 UPDATE ... FROM (VALUES ...) 방식 사용
+        - 3500건 처리 시: 3500개 SQL → 1개 SQL (약 3~5배 성능 개선 예상)
+        - SQL 파싱: 3500회 → 1회
+        - 네트워크 왕복: 3500회 → 1회
+        
+        주의: 모든 레코드는 동일한 컬럼 세트를 업데이트해야 함 (같은 테이블이므로 보통 동일)
+    -->
+    <update id="bulkUpdateTargetRecords">
+        UPDATE ${params.tableName} AS t
+        SET
+        <!-- 각 컬럼별로 SET 절 생성 (backup 컬럼 + 원본 컬럼) -->
+        <!-- allColumnNames: 업데이트할 모든 컬럼명 리스트 -->
+        <!-- records: 각 레코드는 {pkValues, columnValues} 포함 -->
+        <!-- columnValues: Map 형태로 {columnName: {originalValue, encryptedValue}} -->
+        <foreach collection="params.allColumnNames" item="colName" separator=",">
+            ${colName}_bak = v.${colName}_bak,
+            ${colName} = v.${colName}
+        </foreach>
+        FROM (VALUES
+            <foreach collection="params.records" item="record" separator=",">
+                (<foreach collection="params.pkColumnNames" item="pkCol" separator=",">
+                    #{record.pkValues[${pkCol}]}
+                </foreach>
+                <foreach collection="params.allColumnNames" item="colName">
+                    ,#{record.columnValues[${colName}].originalValue}
+                    ,#{record.columnValues[${colName}].encryptedValue}
+                </foreach>)
+            </foreach>
+        ) AS v(<foreach collection="params.pkColumnNames" item="pkCol" separator=",">pk_${pkCol}</foreach>
+        <foreach collection="params.allColumnNames" item="colName">
+            ,${colName}_bak,${colName}
+        </foreach>)
+        WHERE 
+            <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
+                t.${pkCol} = v.pk_${pkCol}
+            </foreach>
+    </update>
+
 
 </mapper>
 

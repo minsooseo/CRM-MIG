@@ -44,6 +44,20 @@ public interface TargetTableMapper {
      * @return 업데이트된 행 수
      */
     int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
+
+    /**
+     * 대상 테이블 벌크 업데이트 (여러 레코드를 한 번의 SQL로 처리)
+     * 
+     * @param params 벌크 업데이트 파라미터
+     *               - tableName: 대상 테이블명
+     *               - pkColumnNames: PK 컬럼명 리스트
+     *               - records: 업데이트할 레코드 리스트
+     *                 각 레코드는 Map 형태로 {pkValues, columnUpdates} 포함
+     *                 pkValues: PK 값들 (Map<String, Object>)
+     *                 columnUpdates: 컬럼 업데이트 정보 (List<Map>)
+     * @return 업데이트된 행 수
+     */
+    int bulkUpdateTargetRecords(@Param("params") Map<String, Object> params);
 }
 
 

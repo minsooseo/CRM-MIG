@@ -48,33 +48,39 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
     @Override
     public TargetRecordEntity read() throws Exception {
         if (!initialized) {
+            long totalStart = System.currentTimeMillis();
             SqlSession sqlSession = null;
             try {
                 sqlSession = sqlSessionFactory.openSession();
                 TargetTableMapper mapper = sqlSession.getMapper(TargetTableMapper.class);
                 
                 // 1. PK 컬럼명 조회
+                long pkQueryStart = System.currentTimeMillis();
                 Map<String, Object> pkParams = new HashMap<String, Object>();
                 pkParams.put("tableName", tableName);
                 pkParams.put("schemaName", schemaName);
                 List<String> pkColumnNames = mapper.selectPrimaryKeyColumns(pkParams);
+                long pkQueryElapsed = System.currentTimeMillis() - pkQueryStart;
                 
                 if (pkColumnNames == null || pkColumnNames.isEmpty()) {
                     throw new RuntimeException("Primary Key not found for table: " + tableName);
                 }
                 
-                log.info("Table: {}, PK columns: {}, Target columns: {}", 
-                        tableName, pkColumnNames, targetColumns);
+                log.info("Table: {}, PK columns: {}, Target columns: {} (PK query: {}ms)", 
+                        tableName, pkColumnNames, targetColumns, pkQueryElapsed);
                 
                 // 2. 모든 컬럼을 한 번에 조회 (단일 쿼리 - 성능 최적화)
+                long selectStart = System.currentTimeMillis();
                 Map<String, Object> params = new HashMap<String, Object>();
                 params.put("tableName", tableName);
                 params.put("pkColumnNames", pkColumnNames);
                 params.put("targetColumnNames", targetColumns);
                 
                 List<Map<String, Object>> records = mapper.selectAllTargetColumns(params);
+                long selectElapsed = System.currentTimeMillis() - selectStart;
                 
                 // 각 레코드를 Entity로 변환
+                long convertStart = System.currentTimeMillis();
                 List<TargetRecordEntity> entityList = new ArrayList<TargetRecordEntity>();
                 
                 for (Map<String, Object> record : records) {
@@ -109,11 +115,16 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity> {
                     
                     entityList.add(entity);
                 }
+                long convertElapsed = System.currentTimeMillis() - convertStart;
+                
                 recordIterator = entityList.iterator();
                 initialized = true;
                 
-                log.info("Loaded {} records from table: {} with {} columns", 
-                        entityList.size(), tableName, targetColumns.size());
+                long totalElapsed = System.currentTimeMillis() - totalStart;
+                
+                log.info("Loaded {} records from table: {} with {} columns - PK query: {}ms, SELECT: {}ms, Convert: {}ms, Total: {}ms", 
+                        entityList.size(), tableName, targetColumns.size(), 
+                        pkQueryElapsed, selectElapsed, convertElapsed, totalElapsed);
                 
             } finally {
                 if (sqlSession != null) {

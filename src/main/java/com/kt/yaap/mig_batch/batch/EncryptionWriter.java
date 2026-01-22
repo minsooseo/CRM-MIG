@@ -44,6 +44,8 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
             return;
         }
         
+        long totalStart = System.currentTimeMillis();
+        
         SqlSession sqlSession = null;
         try {
             // 단일 쿼리로 처리하므로 일반 모드 사용 (BATCH 모드 불필요)
@@ -52,6 +54,9 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
             
             String tableName = items.get(0).getTableName();
             List<String> pkColumnNames = items.get(0).getPkColumnNames();
+            
+            // 데이터 준비 시작
+            long prepareStart = System.currentTimeMillis();
             
             // 모든 컬럼명 수집 (중복 제거, 정렬)
             Set<String> allColumnNamesSet = new LinkedHashSet<String>();
@@ -99,14 +104,18 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
             bulkParams.put("allColumnNames", allColumnNames);
             bulkParams.put("records", records);
             
-            // 벌크 업데이트 실행
+            long prepareElapsed = System.currentTimeMillis() - prepareStart;
+            
+            // 벌크 업데이트 실행 (DB 호출 시간 측정)
+            long updateStart = System.currentTimeMillis();
             int updateCount = mapper.bulkUpdateTargetRecords(bulkParams);
-            
-            // 트랜잭션 커밋
             sqlSession.commit();
+            long updateElapsed = System.currentTimeMillis() - updateStart;
             
-            log.info("Successfully bulk updated {} records for table: {} (columns: {})", 
-                    updateCount, tableName, allColumnNames);
+            long totalElapsed = System.currentTimeMillis() - totalStart;
+            
+            log.info("Bulk UPDATE {} records for table: {} (columns: {}) - Prepare: {}ms, DB UPDATE+Commit: {}ms, Total: {}ms", 
+                    updateCount, tableName, allColumnNames, prepareElapsed, updateElapsed, totalElapsed);
             
         } catch (Exception e) {
             if (sqlSession != null) {

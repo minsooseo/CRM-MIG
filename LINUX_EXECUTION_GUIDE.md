@@ -32,8 +32,9 @@ scp src/main/resources/application.yml user@linux-server:/opt/crm-mig/config/
 ```bash
 cd /opt/crm-mig
 
-# 기본 실행 (JobParameters 자동 생성)
+# 기본 실행 (JobParameters 자동 생성, 웹 서버 비활성화 - 포트 점유 없음)
 java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s)
 ```
@@ -41,8 +42,9 @@ java -jar crm-mig-1.0.0.jar \
 ### 외부 설정 파일 사용
 
 ```bash
-# 외부 application.yml 사용
+# 외부 application.yml 사용 (웹 서버 비활성화 - 포트 점유 없음)
 java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.config.location=file:./config/application.yml \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s)
@@ -51,7 +53,9 @@ java -jar crm-mig-1.0.0.jar \
 ### DB 연결 정보 직접 지정
 
 ```bash
+# DB 연결 정보 직접 지정 (웹 서버 비활성화 - 포트 점유 없음)
 java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.datasource.url=jdbc:postgresql://db-server:5432/migration_db \
   --spring.datasource.username=postgres \
   --spring.datasource.password=your_password \
@@ -83,6 +87,7 @@ echo "=== CRM Migration Batch Start ===" | tee -a ${LOG_FILE}
 echo "Start Time: $(date)" | tee -a ${LOG_FILE}
 
 java -jar ${JAR_FILE} \
+  --spring.main.web-application-type=none \
   --spring.config.location=file:${CONFIG_FILE} \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s) \
@@ -191,10 +196,14 @@ echo $JAVA_HOME
 대용량 데이터 처리 시 힙 메모리 조정:
 
 ```bash
+# 메모리 설정 + 웹 서버 비활성화 (포트 점유 없음)
 java -Xms512m -Xmx2048m -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s)
 ```
+
+**참고**: `--spring.main.web-application-type=none` 옵션을 사용하면 웹 서버가 시작되지 않아 포트를 점유하지 않습니다. 배치 작업 완료 후 자동으로 프로세스가 종료됩니다.
 
 ### 5. 재실행 시 동작
 이미 'COMPLETE' 상태인 테이블은 자동으로 제외됩니다.
@@ -217,13 +226,15 @@ A job instance already exists and is complete for parameters={run.id=1234567890}
 
 **해결방법**
 ```bash
-# 방법 1: run.id를 나노초로 변경
+# 방법 1: run.id를 나노초로 변경 (웹 서버 비활성화 포함)
 java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s%N)
 
-# 방법 2: 추가 파라미터 사용
+# 방법 2: 추가 파라미터 사용 (웹 서버 비활성화 포함)
 java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s) \
   execution.date=$(date +%Y%m%d%H%M%S)
@@ -280,8 +291,9 @@ java.lang.OutOfMemoryError: Java heap space
 
 **해결방법**
 ```bash
-# 힙 메모리 증가
+# 힙 메모리 증가 (웹 서버 비활성화 포함)
 java -Xms1024m -Xmx4096m -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
   --spring.batch.job.names=migrationJob \
   run.id=$(date +%s)
 
@@ -289,6 +301,52 @@ java -Xms1024m -Xmx4096m -jar crm-mig-1.0.0.jar \
 migration:
   chunk-size: 500  # 1000 → 500으로 감소
 ```
+
+### 문제: 포트가 이미 사용 중 (Port already in use)
+
+**증상**
+```
+Web server failed to start. Port 8080 was already in use.
+또는
+Address already in use
+```
+
+**해결방법**
+
+**방법 1: 웹 서버 비활성화 (권장 - 배치 전용)**
+```bash
+# 웹 서버를 시작하지 않도록 설정 (포트 점유 없음)
+java -jar crm-mig-1.0.0.jar \
+  --spring.main.web-application-type=none \
+  --spring.batch.job.names=migrationJob \
+  run.id=$(date +%s)
+```
+
+**방법 2: 사용 중인 포트 프로세스 확인 및 종료**
+```bash
+# 포트 8080 사용 중인 프로세스 확인
+sudo lsof -i :8080
+# 또는
+sudo netstat -tulpn | grep :8080
+# 또는
+sudo ss -tulpn | grep :8080
+
+# 프로세스 종료 (PID는 위 명령어에서 확인)
+sudo kill -9 <PID>
+
+# 또는 한 줄로 종료
+sudo fuser -k 8080/tcp
+```
+
+**방법 3: 다른 포트로 실행 (웹 서버가 필요한 경우)**
+```bash
+java -jar crm-mig-1.0.0.jar \
+  --server.port=8081 \
+  --spring.batch.job.names=migrationJob \
+  run.id=$(date +%s)
+```
+
+**참고**: 이 배치 애플리케이션은 웹 서버가 필요 없으므로 **방법 1 (웹 서버 비활성화)**을 권장합니다.
 
 ## 디렉토리 구조 예시
 

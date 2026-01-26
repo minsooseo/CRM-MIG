@@ -65,9 +65,8 @@ public class BatchConfig {
         TableRecordReader reader = new TableRecordReader(
                 sqlSessionFactory, tableName, targetColumns, schemaName);
         
-        // Listener: Step 완료 시 status 업데이트 및 리소스 정리
-        MigrationStatusListener statusListener = new MigrationStatusListener(
-                migrationConfigMapper, tableName, reader);
+        // Listener: Step 완료 시 status 업데이트
+        MigrationStatusListener statusListener = new MigrationStatusListener(migrationConfigMapper, tableName);
         
         String stepName = "encryptionStep_" + tableName;
         
@@ -76,7 +75,7 @@ public class BatchConfig {
                 .reader(reader)
                 .processor(encryptionProcessor)
                 .writer(encryptionWriter)
-                .listener(statusListener)  // Step 완료 시 status 업데이트 및 리소스 정리
+                .listener(statusListener)  // Step 완료 시 status 업데이트
                 .build();
     }
 }

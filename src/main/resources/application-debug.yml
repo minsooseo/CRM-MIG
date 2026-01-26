@@ -14,6 +14,9 @@ spring:
     hikari:
       maximum-pool-size: 5
       minimum-idle: 2
+      connection-timeout: 120000  # 스트리밍 대용량 처리 대비 120초 (2분)
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
 # 로깅 설정 (전체 DEBUG - 디버깅용)
 logging:

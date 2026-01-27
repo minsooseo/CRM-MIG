@@ -58,6 +58,10 @@
         fetchSize: DB에서 한 번에 가져올 레코드 수
         - 1000: 일반적인 권장값
         - 10000: 대용량 데이터에 적합
+        
+        재처리 방지:
+        - WHERE 조건으로 처리 안 된 레코드만 조회 (_bak IS NULL)
+        - 재실행 시 이미 처리된 레코드는 자동으로 제외됨
     -->
     <select id="selectAllTargetColumnsStreaming" resultType="java.util.HashMap" fetchSize="1000">
         SELECT 
@@ -68,6 +72,11 @@
                 ,${colName}
             </foreach>
         FROM ${params.tableName}
+        WHERE 
+            <!-- 처리 안 된 레코드만 조회 (_bak IS NULL) -->
+            <foreach collection="params.targetColumnNames" item="colName" separator=" AND ">
+                ${colName}_bak IS NULL
+            </foreach>
         ORDER BY 
             <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
                 ${pkCol}

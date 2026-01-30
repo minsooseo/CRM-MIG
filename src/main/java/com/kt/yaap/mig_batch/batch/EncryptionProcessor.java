@@ -17,15 +17,12 @@ import java.util.Map;
  * 
  * 역할: 원본 값을 SafeDB로 암호화만 수행
  * - 복잡한 로직 없이 암호화만 담당
- * - null이나 빈 값은 마킹 처리하여 재처리 방지
+ * - NULL이나 빈 값은 스킵 (업데이트하지 않음)
  */
 @Component
 public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, TargetRecordEntity> {
 
     private static final Logger log = LoggerFactory.getLogger(EncryptionProcessor.class);
-    
-    /** NULL 값 마킹 상수 */
-    private static final String NULL_MARKED = "NULL_MARKED";
 
     @Autowired
     private SafeDBUtil safeDBUtil;
@@ -33,14 +30,14 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
     @Override
     public TargetRecordEntity process(@NonNull TargetRecordEntity item) throws Exception {
         Map<String, String> encryptedValues = new HashMap<String, String>();
-        int processedCount = 0;  // 암호화 + 마킹 처리된 컬럼 수
+        int processedCount = 0;
         
-        // 각 컬럼의 값을 암호화 또는 마킹
+        // 각 컬럼의 값을 암호화
         for (String columnName : item.getTargetColumnNames()) {
             String originalValue = item.getOriginalValues().get(columnName);
             
+            // NULL 또는 빈 값은 스킵
             if (originalValue != null && !originalValue.trim().isEmpty()) {
-                // 값이 있는 경우: 암호화 수행
                 try {
                     String encryptedValue = safeDBUtil.encrypt(originalValue);
                     encryptedValues.put(columnName, encryptedValue);
@@ -53,13 +50,6 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
                             item.getTableName(), columnName, item.getPkDisplay(), e.getMessage());
                     throw e;
                 }
-            } else {
-                // NULL 또는 빈 값인 경우: 마킹 처리 (재처리 방지)
-                encryptedValues.put(columnName, NULL_MARKED);
-                processedCount++;
-                
-                log.debug("Marked NULL value: table={}, column={}, pk={}", 
-                        item.getTableName(), columnName, item.getPkDisplay());
             }
         }
         

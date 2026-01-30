@@ -18,8 +18,7 @@ import java.util.*;
  * 
  * 역할:
  * - 암호화된 값을 대상 테이블에 UPDATE
- * - 원본 값을 _bak 컬럼에 백업 (PostgreSQL은 소문자)
- * - NULL 값도 마킹하여 재처리 방지
+ * - NULL 값은 스킵 (업데이트하지 않음)
  * 
  * 성능 최적화:
  * - PostgreSQL 벌크 업데이트 사용 (UPDATE ... FROM (VALUES ...))
@@ -36,12 +35,6 @@ import java.util.*;
 public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
 
     private static final Logger log = LoggerFactory.getLogger(EncryptionWriter.class);
-    
-    /** NULL 값 마킹 상수 (Processor와 동일) */
-    private static final String NULL_MARKED = "NULL_MARKED";
-    
-    /** NULL 값 마킹 시 _bak 컬럼에 저장할 값 */
-    private static final String NULL_MARKER = "X";
 
     @Autowired
     private SqlSessionFactory sqlSessionFactory;
@@ -70,29 +63,14 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
                 Map<String, Map<String, String>> columnValues = new HashMap<String, Map<String, String>>();
                 
                 for (String columnName : item.getTargetColumnNames()) {
-                    String originalValue = item.getOriginalValues().get(columnName);
                     String encryptedValue = item.getEncryptedValues().get(columnName);
                     
-                    // encryptedValue가 있는 경우 (암호화된 값 또는 마킹 값)
-                    if (encryptedValue != null) {
+                    // 암호화된 값이 있는 경우만 처리 (NULL 마킹 제외)
+                    if (encryptedValue != null && !"NULL_MARKED".equals(encryptedValue)) {
                         allColumnNamesSet.add(columnName);
                         
                         Map<String, String> colValue = new HashMap<String, String>();
-                        
-                        // 마킹 값인 경우 처리
-                        if (NULL_MARKED.equals(encryptedValue)) {
-                            // NULL 값 마킹: _bak에 마킹 값 저장, 원본 컬럼은 NULL 유지
-                            colValue.put("originalValue", NULL_MARKER);
-                            colValue.put("encryptedValue", null);
-                            
-                            log.debug("Marking NULL value: table={}, column={}, pk={}", 
-                                    tableName, columnName, item.getPkDisplay());
-                        } else {
-                            // 암호화된 값: 정상 처리
-                            colValue.put("originalValue", originalValue);
-                            colValue.put("encryptedValue", encryptedValue);
-                        }
-                        
+                        colValue.put("encryptedValue", encryptedValue);
                         columnValues.put(columnName, colValue);
                     }
                 }

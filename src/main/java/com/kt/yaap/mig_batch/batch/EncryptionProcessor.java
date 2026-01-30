@@ -31,6 +31,7 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
     public TargetRecordEntity process(@NonNull TargetRecordEntity item) throws Exception {
         Map<String, String> encryptedValues = new HashMap<String, String>();
         int processedCount = 0;
+        int skippedCount = 0;  // 이미 암호화된 컬럼 수
         
         // 각 컬럼의 값을 암호화
         for (String columnName : item.getTargetColumnNames()) {
@@ -38,6 +39,14 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
             
             // NULL 또는 빈 값은 스킵
             if (originalValue != null && !originalValue.trim().isEmpty()) {
+                // 이미 암호화된 값인지 체크 (성능 최적화: 패턴 기반 체크)
+                if (safeDBUtil.isEncrypted(originalValue)) {
+                    skippedCount++;
+                    log.debug("Already encrypted, skipping: table={}, column={}, pk={}", 
+                            item.getTableName(), columnName, item.getPkDisplay());
+                    continue;  // 이미 암호화된 값은 스킵
+                }
+                
                 try {
                     String encryptedValue = safeDBUtil.encrypt(originalValue);
                     encryptedValues.put(columnName, encryptedValue);
@@ -54,14 +63,21 @@ public class EncryptionProcessor implements ItemProcessor<TargetRecordEntity, Ta
         }
         
         // 처리할 컬럼이 하나도 없으면 null 반환 (Writer로 전달 안 됨)
+        // → Spring Batch 메타 테이블의 filterCount에 기록됨 (스킵 건수)
         if (processedCount == 0) {
-            log.debug("No values to process for pk={}", item.getPkDisplay());
+            if (skippedCount > 0) {
+                log.debug("All columns already encrypted, skipping record: table={}, pk={}, skipped {} columns", 
+                        item.getTableName(), item.getPkDisplay(), skippedCount);
+            } else {
+                log.debug("No values to process (all NULL/empty): table={}, pk={}", 
+                        item.getTableName(), item.getPkDisplay());
+            }
             return null;
         }
         
         item.setEncryptedValues(encryptedValues);
-        log.debug("Processed record: table={}, pk={}, processed {} columns", 
-                item.getTableName(), item.getPkDisplay(), processedCount);
+        log.debug("Processed record: table={}, pk={}, processed {} columns, skipped {} columns", 
+                item.getTableName(), item.getPkDisplay(), processedCount, skippedCount);
         
         return item;
     }

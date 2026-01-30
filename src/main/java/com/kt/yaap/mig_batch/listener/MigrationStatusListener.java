@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.StepExecutionListener;
+import org.springframework.lang.NonNull;
 
 /**
  * Step 실행 전후에 migration_config 상태를 업데이트하는 리스너
@@ -39,20 +40,29 @@ public class MigrationStatusListener implements StepExecutionListener {
     }
 
     @Override
-    public void beforeStep(StepExecution stepExecution) {
+    public void beforeStep(@NonNull StepExecution stepExecution) {
         log.info("Starting encryption step for table: {}", tableName);
     }
 
     @Override
-    public ExitStatus afterStep(StepExecution stepExecution) {
+    public ExitStatus afterStep(@NonNull StepExecution stepExecution) {
+        // Step 실행 통계 로그 출력 (메타 테이블에 기록된 값)
+        long readCount = stepExecution.getReadCount();           // 전체 읽은 레코드 수
+        long writeCount = stepExecution.getWriteCount();         // 실제 업데이트한 레코드 수 (암호화 처리)
+        long filterCount = stepExecution.getFilterCount();       // 스킵된 레코드 수 (이미 암호화됨)
+        long skipCount = stepExecution.getSkipCount();            // 예외로 스킵된 건수
+        
+        log.info("📊 Step execution statistics for table: {} | Read: {}, Write: {}, Filter (Skipped): {}, Skip (Error): {}", 
+                tableName, readCount, writeCount, filterCount, skipCount);
+        
         // Step이 성공적으로 완료된 경우에만 status 업데이트
         if (stepExecution.getExitStatus().getExitCode().equals(ExitStatus.COMPLETED.getExitCode())) {
             try {
                 int statusUpdated = migrationConfigMapper.updateStatus(tableName, "COMPLETE");
                 
                 if (statusUpdated > 0) {
-                    log.info("✅ Updated migration_config status to COMPLETE for table: {} (processed {} records)", 
-                            tableName, stepExecution.getReadCount());
+                    log.info("✅ Updated migration_config status to COMPLETE for table: {} | Processed: {}, Skipped: {}", 
+                            tableName, writeCount, filterCount);
                 } else {
                     // 워닝이지만 치명적이지 않음 (테스트 테이블 등)
                     log.warn("⚠️ No migration_config record found for table: {} (test table?)", tableName);

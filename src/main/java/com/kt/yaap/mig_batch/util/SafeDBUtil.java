@@ -99,6 +99,32 @@ public class SafeDBUtil {
     }
 
     /**
+     * AES128 암호화 후 Base64 인코딩된 값인지 체크
+     * 
+     * 성능 최적화: 복호화 시도 없이 패턴 기반으로 빠르게 판단
+     * - Base64 문자만 포함 (A-Za-z0-9+/=)
+     * - 최소 24자 이상 (AES128 블록 크기 고려)
+     * - Base64 길이 규칙 준수 (4의 배수 또는 =로 끝남)
+     * 
+     * @param value 체크할 값
+     * @return 암호화된 값이면 true, 평문이면 false
+     */
+    public boolean isEncrypted(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return false;
+        }
+        
+        // Base64 패턴 체크: Base64 문자만 포함하고 24자 이상
+        // AES128 암호화 후 Base64 인코딩된 값은 최소 24자 이상
+        boolean matchesBase64Pattern = value.matches("^[A-Za-z0-9+/=]{24,}$");
+        
+        // Base64 길이 규칙 체크: 4의 배수이거나 =로 끝남
+        boolean validBase64Length = (value.length() % 4 == 0 || value.endsWith("="));
+        
+        return matchesBase64Pattern && validBase64Length;
+    }
+
+    /**
      * SafeDB 복호화
      * 
      * @param encryptedText 암호화된 텍스트

@@ -141,10 +141,7 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity>, ItemSt
                 log.info("Table: {}, PK columns: {}, Target columns: {}", 
                         tableName, pkColumnNames, targetColumns);
 
-                // 2. 재시작 시 저장된 recordCount 읽기
-                Long savedRecordCount = executionContext.getLong(tableName + ".recordCount", 0L);
-                
-                // 3. Cursor 기반 스트리밍 조회 (메모리 효율적)
+                // 2. Cursor 기반 스트리밍 조회 (메모리 효율적)
                 Map<String, Object> params = new HashMap<String, Object>();
                 params.put("tableName", tableName);
                 params.put("pkColumnNames", pkColumnNames);
@@ -152,26 +149,6 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity>, ItemSt
                 
                 cursor = mapper.selectAllTargetColumnsStreaming(params);
                 cursorIterator = cursor.iterator();
-                
-                // 4. 재시작 시 저장된 위치까지 건너뛰기
-                if (savedRecordCount > 0) {
-                    log.info("Restarting: skipping {} records for table: {}", savedRecordCount, tableName);
-                    long skippedCount = 0;
-                    for (long i = 0; i < savedRecordCount; i++) {
-                        if (cursorIterator.hasNext()) {
-                            cursorIterator.next();  // 건너뛰기
-                            skippedCount++;
-                        } else {
-                            log.warn("Cursor ended before reaching saved position: {} records (skipped: {})", 
-                                    savedRecordCount, skippedCount);
-                            break;
-                        }
-                    }
-                    recordCount = skippedCount;
-                    log.info("Resumed from record {} for table: {} (skipped {} records)", 
-                            recordCount, tableName, skippedCount);
-                }
-                
                 initialized = true;
                 
                 log.info("Initialized streaming reader for table: {} (using Cursor-based streaming)", tableName);
@@ -185,10 +162,7 @@ public class TableRecordReader implements ItemReader<TargetRecordEntity>, ItemSt
 
     @Override
     public void update(@NonNull org.springframework.batch.item.ExecutionContext executionContext) throws ItemStreamException {
-        // 진행 상황 저장 (재시작 시 사용)
-        if (initialized) {
-            executionContext.putLong(tableName + ".recordCount", recordCount);
-        }
+        // ItemStream 인터페이스 구현 필수. 현재 프로젝트는 매 실행마다 새 Job 인스턴스로 시작하므로 상태 저장 불필요.
     }
 
     @Override

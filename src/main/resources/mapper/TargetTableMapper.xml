@@ -17,36 +17,6 @@
         ORDER BY kcu.ordinal_position
     </select>
 
-    <!-- 대상 테이블에서 PK와 컬럼 값 조회 (단일키/복합키 통일 처리) -->
-    <!-- ORDER BY 제거: Java에서 LinkedHashMap으로 순서 보장, 정렬 비용 제거로 성능 개선 -->
-    <select id="selectTargetRecords" resultType="java.util.HashMap">
-        SELECT 
-            <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
-                ${pkCol} AS "pk_${pkCol}"
-            </foreach>,
-            ${params.columnName} AS original_value,
-            #{params.tableName} AS target_table_name,
-            #{params.columnName} AS target_column_name
-        FROM ${params.tableName}
-    </select>
-
-    <!-- 대상 테이블에서 PK와 모든 대상 컬럼을 한 번에 조회 (단일 쿼리 - 성능 최적화) -->
-    <!-- 
-        성능 개선: 컬럼별 반복 쿼리 → 단일 쿼리
-        - 3개 컬럼 처리 시: 3번 쿼리 → 1번 쿼리 (약 50~67% 성능 개선)
-        - 네트워크 왕복: 컬럼 수만큼 → 1회
-        - DB 스캔: 컬럼 수만큼 → 1회
-    -->
-    <select id="selectAllTargetColumns" resultType="java.util.HashMap">
-        SELECT 
-            <foreach collection="params.pkColumnNames" item="pkCol" separator=",">
-                ${pkCol} AS "pk_${pkCol}"
-            </foreach>
-            <foreach collection="params.targetColumnNames" item="colName">
-                ,${colName}
-            </foreach>
-        FROM ${params.tableName}
-    </select>
 
     <!-- 대상 테이블에서 PK와 모든 대상 컬럼을 스트리밍 방식으로 조회 (Cursor 사용) -->
     <!-- 
@@ -58,10 +28,6 @@
         fetchSize: DB에서 한 번에 가져올 레코드 수
         - 1000: 일반적인 권장값
         - 10000: 대용량 데이터에 적합
-        
-        재처리 방지:
-        - ExecutionContext 기반 재시작 로직 사용
-        - 재실행 시 저장된 recordCount만큼 건너뛰고 이어서 처리
     -->
     <select id="selectAllTargetColumnsStreaming" resultType="java.util.HashMap" fetchSize="1000">
         SELECT 
@@ -77,20 +43,6 @@
                 ${pkCol}
             </foreach>
     </select>
-
-    <!-- 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리, 단일키/복합키 통일 처리) -->
-    <!--<update id="updateTargetRecordWithMultipleColumns">
-        UPDATE ${params.tableName}
-        SET
-        <foreach collection="params.columnUpdates" item="column" separator=",">
-            ${column.backupColumnName} = #{column.originalValue},
-            ${column.columnName} = #{column.encryptedValue}
-        </foreach>
-        WHERE 
-            <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
-                ${pkCol} = #{params.pkValues[${pkCol}]}
-            </foreach>
-    </update>-->
 
     <!-- 대상 테이블 벌크 업데이트 (여러 레코드를 한 번의 SQL로 처리, 단일키/복합키 통일 처리) -->
     <!-- 

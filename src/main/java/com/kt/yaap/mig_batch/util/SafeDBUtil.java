@@ -105,6 +105,8 @@ public class SafeDBUtil {
      * - Base64 문자만 포함 (A-Za-z0-9+/=)
      * - 최소 24자 이상 (AES128 블록 크기 고려)
      * - Base64 길이 규칙 준수 (4의 배수 또는 =로 끝남)
+     * - 대문자 [A-Z], 숫자 [0-9] 각각 최소 1개 이상 (숫자만/영문만 반복 오탐 방지)
+     * - 기호 [+/=]는 있을 수도 없을 수도 있음
      * 
      * @param value 체크할 값
      * @return 암호화된 값이면 true, 평문이면 false
@@ -121,7 +123,11 @@ public class SafeDBUtil {
         // Base64 길이 규칙 체크: 4의 배수이거나 =로 끝남
         boolean validBase64Length = (value.length() % 4 == 0 || value.endsWith("="));
         
-        return matchesBase64Pattern && validBase64Length;
+        // 대문자·숫자 각각 최소 1개 이상 (숫자만/영문만 반복 오탐 방지, 기호는 선택)
+        boolean hasUppercase = value.matches(".*[A-Z].*");
+        boolean hasDigit = value.matches(".*[0-9].*");
+        
+        return matchesBase64Pattern && validBase64Length && hasUppercase && hasDigit;
     }
 
     /**

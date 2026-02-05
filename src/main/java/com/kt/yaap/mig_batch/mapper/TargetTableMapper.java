@@ -68,13 +68,12 @@ public interface TargetTableMapper {
     Cursor<Map<String, Object>> selectAllTargetColumnsStreaming(@Param("params") Map<String, Object> params);
 
     /**
-     * 대상 테이블 업데이트 (여러 컬럼을 한 번에 처리 - foreach 사용)
-     * 
-     * @param params 업데이트 파라미터 (tableName, pkColumnName, pkValue, columnUpdates)
-     *               columnUpdates는 Map 리스트로 각 항목은 {columnName, backupColumnName, originalValue, encryptedValue} 포함
+     * 대상 테이블 레코드 단위 업데이트 (실제 업데이트할 컬럼만 SET, 재수행 시 안전)
+     *
+     * @param params tableName, columnUpdates(List of {columnName, encryptedValue}), pkColumnNames, pkValues
      * @return 업데이트된 행 수
      */
-    //int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
+    int updateTargetRecordWithMultipleColumns(@Param("params") Map<String, Object> params);
 
     /**
      * 대상 테이블 벌크 업데이트 (여러 레코드를 한 번의 SQL로 처리)

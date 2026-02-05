@@ -2,6 +2,7 @@ package com.kt.yaap.mig_batch.batch;
 
 import com.kt.yaap.mig_batch.mapper.TargetTableMapper;
 import com.kt.yaap.mig_batch.model.TargetRecordEntity;
+import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.slf4j.Logger;
@@ -14,22 +15,14 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 /**
- * 여러 컬럼을 UPDATE하는 Writer (벌크 업데이트 방식)
- * 
+ * 여러 컬럼을 UPDATE하는 Writer (레코드 단위 업데이트)
+ *
  * 역할:
- * - 암호화된 값을 대상 테이블에 UPDATE
- * - NULL 값은 스킵 (업데이트하지 않음)
- * 
- * 성능 최적화:
- * - PostgreSQL 벌크 업데이트 사용 (UPDATE ... FROM (VALUES ...))
- * - 3500건 처리 시: 3500개 SQL → 1개 SQL (약 3~5배 성능 개선)
- * - SQL 파싱: 3500회 → 1회
- * - 네트워크 왕복: 3500회 → 1회
- * 
- * 주의:
- * - migration_config status 업데이트는 MigrationStatusListener에서 처리
- * - Writer는 데이터 업데이트만 담당 (단일 책임 원칙)
- * - 모든 레코드는 동일한 테이블이어야 함 (Spring Batch Chunk 보장)
+ * - 암호화된 값을 대상 테이블에 UPDATE (레코드마다 실제 업데이트할 컬럼만 SET)
+ * - 재수행 시 레코드별 컬럼 세트가 달라도 NULL 덮어쓰기 없이 안전
+ *
+ * 성능:
+ * - MyBatis BATCH 모드로 DB 왕복 횟수 감소
  */
 @Component
 public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
@@ -44,75 +37,51 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
         if (items == null || items.isEmpty()) {
             return;
         }
-        
+
         SqlSession sqlSession = null;
         try {
-            // 단일 쿼리로 처리하므로 일반 모드 사용 (BATCH 모드 불필요)
-            sqlSession = sqlSessionFactory.openSession();
+            sqlSession = sqlSessionFactory.openSession(ExecutorType.BATCH);
             TargetTableMapper mapper = sqlSession.getMapper(TargetTableMapper.class);
-            
-            String tableName = items.get(0).getTableName();
-            List<String> pkColumnNames = items.get(0).getPkColumnNames();
-            
-            // 모든 컬럼명 수집 (중복 제거, 정렬)
-            Set<String> allColumnNamesSet = new LinkedHashSet<String>();
-            List<Map<String, Object>> records = new ArrayList<Map<String, Object>>();
-            
+
+            int updateCount = 0;
+            String tableName = null;
+
             for (TargetRecordEntity item : items) {
-                // 레코드별 컬럼값 맵 구성
-                Map<String, Map<String, String>> columnValues = new HashMap<String, Map<String, String>>();
-                
+                tableName = item.getTableName();
+
+                List<Map<String, Object>> columnUpdates = new ArrayList<Map<String, Object>>();
                 for (String columnName : item.getTargetColumnNames()) {
                     String encryptedValue = item.getEncryptedValues().get(columnName);
-                    
-                    // 암호화된 값이 있는 경우만 처리 (NULL 마킹 제외)
                     if (encryptedValue != null && !"NULL_MARKED".equals(encryptedValue)) {
-                        allColumnNamesSet.add(columnName);
-                        
-                        Map<String, String> colValue = new HashMap<String, String>();
-                        colValue.put("encryptedValue", encryptedValue);
-                        columnValues.put(columnName, colValue);
+                        Map<String, Object> columnInfo = new HashMap<String, Object>();
+                        columnInfo.put("columnName", columnName);
+                        columnInfo.put("encryptedValue", encryptedValue);
+                        columnUpdates.add(columnInfo);
                     }
                 }
-                
-                // 업데이트할 컬럼이 있는 경우에만 레코드 추가
-                if (!columnValues.isEmpty()) {
-                    Map<String, Object> record = new HashMap<String, Object>();
-                    record.put("pkValues", item.getPkValues());
-                    record.put("columnValues", columnValues);
-                    records.add(record);
+
+                if (columnUpdates.isEmpty()) {
+                    continue;
                 }
+
+                Map<String, Object> updateParams = new HashMap<String, Object>();
+                updateParams.put("tableName", tableName);
+                updateParams.put("columnUpdates", columnUpdates);
+                updateParams.put("pkColumnNames", item.getPkColumnNames());
+                updateParams.put("pkValues", item.getPkValues());
+
+                mapper.updateTargetRecordWithMultipleColumns(updateParams);
+                updateCount++;
             }
-            
-            if (records.isEmpty()) {
-                log.debug("No records to update for table: {}", tableName);
-                return;
-            }
-            
-            // 컬럼명 리스트 (정렬된 순서)
-            List<String> allColumnNames = new ArrayList<String>(allColumnNamesSet);
-            
-            // 벌크 업데이트 파라미터 구성
-            Map<String, Object> bulkParams = new HashMap<String, Object>();
-            bulkParams.put("tableName", tableName);
-            bulkParams.put("pkColumnNames", pkColumnNames);
-            bulkParams.put("allColumnNames", allColumnNames);
-            bulkParams.put("records", records);
-            
-            // 벌크 업데이트 실행
-            int updateCount = mapper.bulkUpdateTargetRecords(bulkParams);
-            
-            // 트랜잭션 커밋
+
             sqlSession.commit();
-            
-            log.info("Successfully bulk updated {} records for table: {} (columns: {})", 
-                    updateCount, tableName, allColumnNames);
-            
+            log.info("Successfully updated {} records for table: {}", updateCount, tableName);
+
         } catch (Exception e) {
             if (sqlSession != null) {
                 sqlSession.rollback();
             }
-            log.error("Error bulk updating records", e);
+            log.error("Error updating records", e);
             throw e;
         } finally {
             if (sqlSession != null) {

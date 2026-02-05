@@ -82,6 +82,19 @@
             </foreach>
     </update>
 
+    <!-- 레코드 단위 업데이트 (재수행 시 컬럼 세트가 달라도 NULL 덮어쓰기 방지) -->
+    <update id="updateTargetRecordWithMultipleColumns">
+        UPDATE ${params.tableName}
+        SET
+        <foreach collection="params.columnUpdates" item="column" separator=",">
+            ${column.columnName} = #{column.encryptedValue}
+        </foreach>
+        WHERE 
+        <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
+            <bind name="pkKey" value="pkCol" />
+            ${pkCol} = #{params.pkValues[pkKey]}
+        </foreach>
+    </update>
 
 </mapper>
 

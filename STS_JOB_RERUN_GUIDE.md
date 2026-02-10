@@ -155,7 +155,7 @@ DELETE FROM batch_job_instance WHERE job_name = 'migrationJob';
 JobParameters: timestamp=1234567890123
 Job 실행 중...
 INFO  - === 수동 마이그레이션 Job 시작 ===
-INFO  - === Step 1: 백업 컬럼 자동 생성 시작 ===
+INFO  - Creating migrationJob with ... table-specific steps
 ...
 INFO  - === 수동 마이그레이션 Job 완료 ===
 ========================================
@@ -206,8 +206,7 @@ LIMIT 10;
 
 ### Q1: 같은 데이터를 다시 암호화하면 문제가 없나요?
 
-**A**: 현재 코드는 백업 컬럼(`_bak`)에 원본 값을 저장하고, 
-암호화된 값으로 업데이트합니다. 
+**A**: 암호화된 값으로 업데이트합니다. 
 다시 실행하면 이미 암호화된 값이 다시 암호화될 수 있으므로, 
 `migration_config` 테이블의 `status`를 'COMPLETE'로 관리하여 
 중복 처리를 방지합니다.
@@ -221,7 +220,6 @@ LIMIT 10;
 ### Q3: 재실행 시 기존 데이터에 영향이 있나요?
 
 **A**: 
-- 백업 컬럼(`_bak`): 이미 값이 있으면 UPDATE
 - 대상 컬럼: 이미 암호화된 값이 있어도 다시 암호화됨
 - **권장**: `status`를 'COMPLETE'로 관리하여 중복 처리 방지
 

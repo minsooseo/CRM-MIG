@@ -30,7 +30,6 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 - ✅ 정확한 read_count: Step별로 실제 처리한 레코드 수를 정확하게 집계
 - ✅ 복합키 지원: 단일키 및 복합키 모두 지원
 - ✅ 자동 상태 관리: 처리 완료 후 `status`를 'COMPLETE'로 자동 업데이트
-- ✅ 백업 컬럼 자동 생성: 원본 데이터 손실 방지 (_bak 소문자)
 - ✅ 스키마 설정: application.yml에서 스키마명 설정 가능
 
 ## 주요 구성 요소
@@ -63,18 +62,13 @@ Spring Batch를 사용하여 테이블의 컬럼에 SafeDB 암호화를 적용�
 
 #### ItemWriter (EncryptionWriter)
 - SafeDB가 적용된 값으로 대상 테이블을 UPDATE
-- 원본 값은 `_bak` 컬럼에 백업 (소문자)
 - 여러 컬럼을 한 번의 UPDATE로 처리
-- **MyBatis BATCH 모드**: DB 왕복 횟수 대폭 감소 (1000건당 10~50회) ⚡
 
 #### StepExecutionListener (MigrationStatusListener)
 - Step 완료 시 `migration_config`의 `status`를 'COMPLETE'로 업데이트 (한 번만!)
 - Step 실패 시 status 업데이트 안 함 → 재실행 가능
 
 ### 4. Job 구성 (테이블별 Step 동적 생성)
-- **createBackupColumnStep**: 백업 컬럼 자동 생성 (Tasklet)
-  - `migration_config`에서 활성 설정 조회
-  - 각 컬럼에 대해 `_bak` 백업 컬럼 생성 (소문자)
 - **encryptionStep_테이블명**: 테이블별 암호화 처리 Step
   - `migration_config`에서 테이블 목록을 읽어 동적으로 Step 생성
   - 같은 테이블의 여러 컬럼을 하나의 Step에서 함께 처리
@@ -234,16 +228,12 @@ Run → Run Configurations...
 
 ## 처리 흐름
 
-1. **Step 1: 백업 컬럼 생성**
-   - `migration_config` 테이블에서 활성화된 설정 조회 (status = 'ACTIVE' 또는 NULL)
-   - 각 컬럼에 대해 백업 컬럼 자동 생성 (`{컬럼명}_bak`, 소문자)
-
-2. **Step 2~N: 테이블별 암호화 (순차 실행)**
+1. **Step 1~N: 테이블별 암호화 (순차 실행)**
    - 각 테이블별로 독립적인 Step 실행 (encryptionStep_테이블명)
    - **PK 동적 조회**: INFORMATION_SCHEMA에서 대상 테이블의 Primary Key 자동 조회 (복합키 지원)
    - **데이터 읽기 (Reader)**: 대상 테이블에서 PK와 모든 대상 컬럼 값을 레코드 단위로 조회
    - **SafeDB 적용 (Processor)**: 각 컬럼 값에 SafeDB 암호화 적용
-   - **UPDATE 수행 (Writer)**: 백업 컬럼에 원본 저장 + 암호화된 값으로 업데이트 (MyBatis BATCH 모드)
+   - **UPDATE 수행 (Writer)**: 암호화된 값으로 업데이트
    - **상태 업데이트 (Listener)**: Step 완료 시 `status`를 'COMPLETE'로 업데이트 (한 번만!)
 
 ## 주의사항
@@ -256,30 +246,22 @@ Run → Run Configurations...
    - 각 Step별로 Chunk 단위 트랜잭션 분리
    - 실패 시 해당 Chunk만 롤백
 
-3. **백업 컬럼 자동 생성**
-   - 마이그레이션 전처리 단계에서 백업 컬럼(`컬럼명_bak`, 소문자)을 자동으로 생성
-   - 원본 컬럼과 동일한 데이터 타입으로 생성
-   - 이미 존재하는 경우 건너뜀
-   - PostgreSQL은 컬럼명을 소문자로 저장하므로 `_bak` 소문자 사용
-
-4. **에러 처리**
+3. **에러 처리**
    - SafeDB 적용 실패 시 로깅 및 별도 처리
    - 실패한 레코드는 재처리 가능하도록 설계
    - status 업데이트 실패해도 데이터 처리는 성공 처리 (이미 암호화 완료)
 
-5. **성능 최적화**
-   - **MyBatis BATCH 모드**: Writer에서 DB 왕복 횟수 대폭 감소
-   - 1000건 처리 시: 1000번 왕복 → 10~50번 왕복 (약 50배 빠름!) ⚡
+4. **성능 최적화**
    - 대상 테이블에 적절한 인덱스 설정
    - 테이블별 Step 순차 실행
    - 여러 컬럼을 한 번의 UPDATE로 처리
 
-6. **상태 관리**
+5. **상태 관리**
    - 처리 완료된 테이블의 `status`를 'COMPLETE'로 자동 업데이트
    - 'COMPLETE' 상태인 설정은 다음 실행 시 자동 제외
    - 데이터 무결성 보장
 
-7. **read_count 정확성**
+6. **read_count 정확성**
    - 각 Step의 read_count는 실제 처리한 레코드 수를 정확하게 반영
    - 예: TB_USER 테이블 150건 → encryptionStep_TB_USER의 read_count = 150
 
@@ -293,7 +275,6 @@ src/
 │   │   ├── config/
 │   │   │   ├── BatchConfig.java              # Step 설정
 │   │   │   ├── MigrationJobConfig.java       # Job 설정 (테이블별 Step 동적 생성)
-│   │   │   ├── MigrationProperties.java      # 설정 Properties
 │   │   │   ├── DatabaseConfig.java           # 데이터소스 설정
 │   │   │   ├── MyBatisConfig.java            # MyBatis 설정
 │   │   │   └── SafeDBConfig.java             # SafeDB 설정
@@ -303,16 +284,12 @@ src/
 │   │   ├── batch/
 │   │   │   ├── TableRecordReader.java        # 실제 테이블 레코드 읽기
 │   │   │   ├── EncryptionProcessor.java      # SafeDB 암호화 처리
-│   │   │   └── EncryptionWriter.java         # UPDATE 수행 (MyBatis BATCH 모드)
+│   │   │   └── EncryptionWriter.java         # UPDATE 수행
 │   │   ├── listener/
 │   │   │   └── MigrationStatusListener.java  # Step 완료 시 status 업데이트
 │   │   ├── model/
 │   │   │   ├── MigrationConfigEntity.java    # 설정 엔티티
-│   │   │   ├── TargetRecordEntity.java       # 레코드 엔티티 (PK + 여러 컬럼)
-│   │   │   ├── SourceEntity.java             # 소스 엔티티 (레거시)
-│   │   │   └── TargetEntity.java             # 타겟 엔티티 (레거시)
-│   │   ├── service/
-│   │   │   └── BackupColumnService.java      # 백업 컬럼 자동 생성 서비스
+│   │   │   └── TargetRecordEntity.java       # 레코드 엔티티 (PK + 여러 컬럼)
 │   │   ├── util/
 │   │   │   └── SafeDBUtil.java               # SafeDB 유틸리티
 │   │   └── scheduler/

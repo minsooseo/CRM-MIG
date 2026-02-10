@@ -121,10 +121,7 @@ java -jar target/crm-mig-1.0.0.jar --spring.batch.job.names=migrationJob run.id=
 
 ```sql
 -- 암호화된 데이터 확인
-SELECT customer_id, phone, phone_bak FROM customer LIMIT 10;
-
--- 백업 컬럼 확인 (원본 데이터)
-SELECT customer_id, phone_bak FROM customer WHERE phone_bak IS NOT NULL LIMIT 10;
+SELECT customer_id, phone FROM customer LIMIT 10;
 
 -- migration_config 상태 확인
 SELECT * FROM migration_config;
@@ -136,7 +133,6 @@ SELECT * FROM batch_job_execution ORDER BY create_time DESC LIMIT 5;
 ### 예상 결과
 
 - `phone` 컬럼: `[ENCRYPTED]010-1234-5678` (Mock 암호화)
-- `phone_bak` 컬럼: `010-1234-5678` (원본 백업)
 - `migration_config.status`: `COMPLETE` (처리 완료)
 
 ## 문제 해결

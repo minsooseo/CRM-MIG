@@ -115,12 +115,9 @@ spring:
 마이그레이션 Job 수동 실행 시작
 ========================================
 INFO  - === 수동 마이그레이션 Job 시작 ===
-INFO  - === Step 1: 백업 컬럼 자동 생성 시작 ===
-INFO  - === Step 1: 백업 컬럼 자동 생성 완료 ===
-INFO  - Processing migration config: Table=...
+INFO  - Creating migrationJob with ... table-specific steps
+INFO  - [encryptionStep_테이블명] TableRecordReader initialized...
 INFO  - Successfully updated ... records
-INFO  - === Step 3: 마이그레이션 후처리 시작 ===
-INFO  - === Step 3: 마이그레이션 후처리 완료 ===
 INFO  - === 수동 마이그레이션 Job 완료 ===
 ========================================
 마이그레이션 Job 수동 실행 완료

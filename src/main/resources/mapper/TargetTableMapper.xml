@@ -90,9 +90,8 @@
             ${column.columnName} = #{column.encryptedValue}
         </foreach>
         WHERE 
-        <foreach collection="params.pkColumnNames" item="pkCol" separator=" AND ">
-            <bind name="pkKey" value="pkCol" />
-            ${pkCol} = #{params.pkValues[pkKey]}
+        <foreach collection="params.pkConditions" item="pkCond" separator=" AND ">
+            ${pkCond.columnName} = #{pkCond.value}
         </foreach>
     </update>
 

@@ -77,9 +77,8 @@ public JobLauncher jobLauncher(JobRepository jobRepository) {
 @Bean
 public Job migrationJob(JobRepository jobRepository, ...) {
     return new JobBuilder("migrationJob", jobRepository)
-            .start(createBackupColumnStep)
-            .next(migrationStep)
-            .next(postMigrationStep)
+            .start(firstEncryptionStep)  // 테이블별 Step 순차 연결
+            .next(...)
             .preventRestart(false)  // 재시작 허용
             .build();
 }

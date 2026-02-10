@@ -355,7 +355,6 @@ crontab -l
 - [ ] PostgreSQL 서버 실행 확인
 - [ ] migration_db 데이터베이스 생성
 - [ ] migration_config 테이블 생성 및 데이터 입력
-- [ ] 대상 테이블에 백업 컬럼(`_bak`) 생성
 - [ ] Spring Batch 메타데이터 테이블 자동 생성 확인
 
 ### 4.2 설정 파일
@@ -453,19 +452,6 @@ JobInstanceAlreadyCompleteException
 3. 또는 배치 메타데이터 삭제 (위 2.4 참고)
 ```
 
-### 5.5 백업 컬럼 없음 오류
-
-**증상:**
-```
-ERROR: column "phone_bak" of relation "customer" does not exist
-```
-
-**해결:**
-```sql
--- 백업 컬럼 생성 (소문자)
-ALTER TABLE customer ADD COLUMN phone_bak VARCHAR(20);
-```
-
 ---
 
 ## 6. 실행 결과 확인
@@ -520,10 +506,9 @@ ORDER BY priority, target_table_name;
 ### 6.3 대상 테이블 확인
 
 ```sql
--- 백업 및 암호화 확인
+-- 암호화 확인
 SELECT 
     customer_id,
-    phone_bak,      -- 원본 백업
     phone,          -- 암호화된 값
     LENGTH(phone) as encrypted_length
 FROM customer

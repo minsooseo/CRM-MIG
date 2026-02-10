@@ -32,7 +32,6 @@ import java.util.Map;
  * - Step 개수 = 테이블 개수
  * 
  * 주의사항:
- * - 백업 컬럼(_bak)은 사전에 수동으로 생성되어 있어야 함
  * - migration_config 테이블에 활성 설정이 최소 1개 이상 있어야 함
  */
 @Configuration
@@ -56,7 +55,6 @@ public class MigrationJobConfig {
      * migration_config에서 설정을 읽어 테이블별로 Step을 생성합니다.
      * 같은 테이블의 여러 컬럼은 하나의 Step에서 함께 처리됩니다.
      * 
-     * 주의: 백업 컬럼(_bak)은 사전에 수동으로 생성되어 있어야 합니다.
      */
     @Bean
     public Job migrationJob() {

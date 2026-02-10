@@ -7,7 +7,6 @@
 
 ### 1.2 주요 기능
 - ✅ 설정 기반 자동 마이그레이션
-- ✅ 백업 컬럼 자동 생성
 - ✅ SafeDB 암호화 적용
 - ✅ 복합키 지원
 - ✅ 처리 상태 자동 관리
@@ -45,15 +44,12 @@
 ```
 [Job: migrationJob]
     │
-    ├─ Step 1: createBackupColumnStep (Tasklet)
-    │           └─ 백업 컬럼 자동 생성 (_bak)
-    │
-    ├─ Step 2: encryptionStep_TB_USER (Chunk)
+    ├─ Step 1: encryptionStep_TB_USER (Chunk)
     │           ├─ Reader:  TB_USER 레코드 읽기
     │           ├─ Processor: SafeDB 암호화
     │           └─ Writer: UPDATE 수행
     │
-    ├─ Step 3: encryptionStep_TB_ORDER (Chunk)
+    ├─ Step 2: encryptionStep_TB_ORDER (Chunk)
     │           ├─ Reader:  TB_ORDER 레코드 읽기
     │           ├─ Processor: SafeDB 암호화
     │           └─ Writer: UPDATE 수행
@@ -84,24 +80,19 @@
 ```java
 // MigrationJobConfig.java
 @Bean
-public Job migrationJob(JobRepository jobRepository, Step createBackupColumnStep) {
+public Job migrationJob() {
     // 1. migration_config에서 설정 조회
     List<MigrationConfigEntity> configs = migrationConfigMapper.selectActiveConfigs();
     
     // 2. 테이블별로 그룹화
     Map<String, List<String>> tableColumnMap = groupByTable(configs);
     
-    // 3. 각 테이블마다 Step 생성 및 연결
-    SimpleJobBuilder jobBuilder = new JobBuilder("migrationJob")
-        .repository(jobRepository)
-        .start(createBackupColumnStep);
+    // 3. 각 테이블마다 Step 생성 및 순차 연결
+    SimpleJobBuilder jobBuilder = jobBuilderFactory.get("migrationJob")
+        .start(batchConfig.createTableEncryptionStep(firstTable, firstColumns));
     
-    for (Map.Entry<String, List<String>> entry : tableColumnMap.entrySet()) {
-        Step step = batchConfig.createTableEncryptionStep(
-            entry.getKey(),   // tableName
-            entry.getValue(), // columns
-            jobRepository, transactionManager);
-        jobBuilder = jobBuilder.next(step);
+    for (나머지 테이블들) {
+        jobBuilder = jobBuilder.next(batchConfig.createTableEncryptionStep(table, columns));
     }
     
     return jobBuilder.build();
@@ -144,15 +135,13 @@ CREATE TABLE tb_user (
 );
 ```
 
-**After (자동 생성):**
+**After:**
 ```sql
 CREATE TABLE tb_user (
     user_id   SERIAL PRIMARY KEY,
     user_name VARCHAR(100),
     phone     VARCHAR(20),      -- 암호화된 데이터
-    email     VARCHAR(100),     -- 암호화된 데이터
-    phone_bak VARCHAR(20),      -- 백업 (원본 평문)
-    email_bak VARCHAR(100)      -- 백업 (원본 평문)
+    email     VARCHAR(100)      -- 암호화된 데이터
 );
 ```
 
@@ -175,14 +164,7 @@ CREATE TABLE tb_user (
   │
   ▼
 ┌────────────────────────────────┐
-│ Step 1: 백업 컬럼 생성          │
-│ - migration_config 조회        │
-│ - 각 컬럼에 _bak 컬럼 생성     │
-└────────────────────────────────┘
-  │
-  ▼
-┌────────────────────────────────┐
-│ Step 2: encryptionStep_테이블1 │
+│ Step 1: encryptionStep_테이블1 │
 │                                │
 │ [Reader]                       │
 │ - PK 조회 (INFORMATION_SCHEMA) │
@@ -192,9 +174,8 @@ CREATE TABLE tb_user (
 │ - SafeDB 암호화 적용           │
 │                                │
 │ [Writer]                       │
-│ - 백업 컬럼에 원본 저장        │
-│ - 원본 컬럼에 암호화 값 저장   │
-│ - MyBatis BATCH 모드로 실행    │
+│ - 암호화된 값으로 UPDATE       │
+│ - 레코드 단위 또는 벌크 업데이트│
 │                                │
 │ [Listener]                     │
 │ - status = 'COMPLETE' 업데이트 │
@@ -203,7 +184,7 @@ CREATE TABLE tb_user (
   │
   ▼
 ┌────────────────────────────────┐
-│ Step 3: encryptionStep_테이블2 │
+│ Step 2: encryptionStep_테이블2 │
 │ (동일한 처리)                  │
 └────────────────────────────────┘
   │
@@ -238,10 +219,9 @@ CREATE TABLE tb_user (
               │
               ▼
 ┌─────────────────────────────────────┐
-│ Writer: MyBatis BATCH 모드          │
-│ - 1000개 UPDATE를 메모리에 적재     │
-│ - flushStatements() 배치 실행      │
-│ - DB 왕복: 1000번 → 10~50번 ⚡     │
+│ Writer: 암호화된 값 UPDATE          │
+│ - ExecutorType.BATCH 또는 벌크      │
+│ - 레코드 단위 updateTargetRecord... │
 │ - Transaction Commit               │
 └─────────────────────────────────────┘
               │
@@ -261,10 +241,9 @@ CREATE TABLE tb_user (
 | 클래스 | 역할 |
 |--------|------|
 | `MigrationJobConfig` | Job 정의, 테이블별 Step 동적 생성 |
-| `BatchConfig` | Step 생성 팩토리, Tasklet 정의 |
+| `BatchConfig` | Step 생성 팩토리 (createTableEncryptionStep) |
 | `DatabaseConfig` | DataSource 설정 |
 | `MyBatisConfig` | MyBatis SqlSessionFactory 설정 |
-| `MigrationProperties` | 설정 Properties (chunk-size, schema-name) |
 
 ### 6.2 Batch Components
 
@@ -272,7 +251,7 @@ CREATE TABLE tb_user (
 |--------|------|------|
 | `TableRecordReader` | ItemReader | 테이블 레코드 직접 읽기 (PK + 컬럼값) |
 | `EncryptionProcessor` | ItemProcessor | SafeDB 암호화 적용 |
-| `EncryptionWriter` | ItemWriter | UPDATE 수행 (MyBatis BATCH 모드) |
+| `EncryptionWriter` | ItemWriter | UPDATE 수행 (레코드 단위/벌크) |
 | `MigrationStatusListener` | StepExecutionListener | Step 완료 시 status 업데이트 (한 번만!) |
 
 ### 6.3 Model
@@ -282,13 +261,7 @@ CREATE TABLE tb_user (
 | `MigrationConfigEntity` | migration_config 테이블 매핑<br/>- targetTableName, targetColumnName, pkColumnName | `@Data`, `@NoArgsConstructor` |
 | `TargetRecordEntity` | 대상 테이블의 레코드 (PK + 컬럼값 + 암호화값)<br/>- tableName, pkColumnNames, pkValues<br/>- targetColumnNames, originalValues, encryptedValues<br/>- 명시적 생성자 (Map 필드 초기화, NPE 방지)<br/>- getPkDisplay() 메서드 | `@Data`, 명시적 생성자 |
 
-### 6.4 Service
-
-| 클래스 | 역할 |
-|--------|------|
-| `BackupColumnService` | 백업 컬럼 자동 생성 (_bak) |
-
-### 6.5 Mapper
+### 6.4 Mapper
 
 | 인터페이스 | 역할 |
 |----------|------|
@@ -330,18 +303,6 @@ private Map<String, Object> pkValues;  // {user_id=1, sub_id=2}
 WHERE user_id = ? AND sub_id = ?
 ```
 
-### 7.3 백업 컬럼 네이밍 (_bak 소문자)
-
-PostgreSQL은 컬럼명을 소문자로 저장하므로 `_bak` 사용
-
-```sql
--- ✅ 올바른 방식
-ALTER TABLE tb_user ADD COLUMN phone_bak VARCHAR(20);
-
--- ❌ 잘못된 방식
-ALTER TABLE tb_user ADD COLUMN phone_BAK VARCHAR(20);
-```
-
 ---
 
 ## 📐 8. 기술 스택
@@ -361,15 +322,11 @@ ALTER TABLE tb_user ADD COLUMN phone_BAK VARCHAR(20);
 
 ## 🔒 9. 보안 설계
 
-### 9.1 백업 전략
-- 원본 데이터를 `_bak` 컬럼에 자동 백업
-- 롤백 가능 구조
-
-### 9.2 트랜잭션 관리
+### 9.1 트랜잭션 관리
 - Chunk 단위 트랜잭션 (기본 1000건)
 - 실패 시 해당 Chunk만 롤백
 
-### 9.3 재실행 전략
+### 9.2 재실행 전략
 ```sql
 -- 재실행 시 COMPLETE 상태 제외
 SELECT * FROM migration_config 
@@ -411,7 +368,6 @@ spring:
 | 목표 | 구현 | 상태 |
 |------|------|------|
 | 설정 기반 동적 처리 | migration_config 테이블 | ✅ |
-| 백업 자동화 | BackupColumnService | ✅ |
 | 복합키 지원 | INFORMATION_SCHEMA 조회 | ✅ |
 | 정확한 모니터링 | 테이블별 Step, read_count | ✅ |
 | 재실행 가능성 | status 관리 | ✅ |

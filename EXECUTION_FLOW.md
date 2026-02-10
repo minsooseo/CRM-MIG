@@ -5,10 +5,6 @@
 ```
 [애플리케이션 시작]
        ↓
-[사전 준비: 백업 컬럼 수동 생성]
-       - 각 대상 컬럼에 대해 _bak 컬럼 수동 생성 (소문자)
-       - 예: phone → phone_bak, email → email_bak
-       ↓
 [Job 트리거] (스케줄러 또는 수동 실행)
        ↓
 [Step 1~N: 테이블별 암호화 (순차 실행)]
@@ -18,35 +14,6 @@
        - 처리 완료 후 status를 'COMPLETE'로 업데이트
        ↓
 [완료]
-```
-
----
-
-## ⚠️ 사전 준비: 백업 컬럼 수동 생성
-
-### 필수 작업
-배치 프로그램 실행 **전에** 백업 컬럼을 수동으로 생성해야 합니다.
-
-### 백업 컬럼 생성 규칙
-- **컬럼명**: `{원본컬럼명}_bak` (소문자)
-- **데이터 타입**: 원본 컬럼과 동일
-- **예시**:
-  - `phone VARCHAR(20)` → `phone_bak VARCHAR(20)`
-  - `email VARCHAR(100)` → `email_bak VARCHAR(100)`
-
-### SQL 예시
-```sql
--- customer 테이블에 phone_bak 컬럼 생성
-ALTER TABLE customer 
-ADD COLUMN IF NOT EXISTS phone_bak VARCHAR(20);
-
--- "order" 테이블에 recipient_phone_bak 컬럼 생성
-ALTER TABLE "order" 
-ADD COLUMN IF NOT EXISTS recipient_phone_bak VARCHAR(20);
-
--- "order" 테이블에 recipient_name_bak 컬럼 생성
-ALTER TABLE "order" 
-ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 ```
 
 ---
@@ -86,7 +53,7 @@ ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 │   Reader    │ --> │  Processor   │ --> │   Writer    │ --> │  Listener    │
 │             │     │              │     │             │     │              │
 │ 실제 테이블 │     │ SafeDB 암호화│     │ DB Update   │     │ status 업데이트│
-│ 레코드 읽기 │     │ 처리         │     │ (BATCH 모드)│     │ (Step 완료 시)│
+│ 레코드 읽기 │     │ 처리         │     │             │     │ (Step 완료 시)│
 │ (PK + 컬럼) │     │ (복합키 지원)│     │             │     │              │
 └─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
 ```
@@ -182,50 +149,25 @@ ADD COLUMN IF NOT EXISTS recipient_name_bak VARCHAR(100);
 
 ### ✍️ Writer 단계 (`EncryptionWriter`)
 
-**역할**: 암호화된 값을 대상 테이블에 업데이트 (원본 값 백업 포함)
+**역할**: 암호화된 값을 대상 테이블에 업데이트
 
 ```
-1. Chunk 단위로 여러 TargetRecordEntity 받음 (예: 1000건)
+1. Chunk 단위로 여러 TargetRecordEntity 받음
       ↓
-2. MyBatis BATCH 모드로 SqlSession 열기
-  - ExecutorType.BATCH 사용
-  - 여러 UPDATE를 메모리에 적재 후 한 번에 실행
+2. ExecutorType.BATCH로 SqlSession 열기
       ↓
 3. 각 레코드에 대해:
-  a) 여러 컬럼 정보를 리스트로 구성
-     columnUpdates: [
-       {columnName: "name", backupColumnName: "name_bak", 
-        originalValue: "홍길동", encryptedValue: "encrypted_name_1"},
-       {columnName: "email", backupColumnName: "email_bak",
-        originalValue: "test@example.com", encryptedValue: "encrypted_email_1"}
-     ]
-      ↓
-  b) UPDATE 쿼리 등록 (메모리에 적재만 하고 아직 실행 안 함)
+  a) columnUpdates 리스트 구성 (columnName, encryptedValue)
+  b) updateTargetRecordWithMultipleColumns 호출
      UPDATE TB_USER
-     SET 
-       name_bak = '홍길동',
-       name = 'encrypted_name_1',
-       email_bak = 'test@example.com',
-       email = 'encrypted_email_1'
+     SET name = 'encrypted_name_1', email = 'encrypted_email_1'
      WHERE user_id = 1
       ↓
-4. 모든 레코드 처리 완료 후:
-  a) flushStatements() 호출 → 배치 실행
-     - 1000건의 UPDATE가 10~50번의 DB 왕복으로 실행
-     - 성능: 1000번 왕복 → 10~50번 왕복 (약 50배 빠름!)
-      ↓
-  b) 트랜잭션 커밋
-     - 에러 발생 시 롤백
+4. sqlSession.commit()
 ```
 
-**성능 최적화**:
-- ✅ MyBatis BATCH 모드: DB 왕복 횟수 대폭 감소 (1000건당 10~50회)
-- ✅ 여러 컬럼을 한 번의 UPDATE로 처리
-- ✅ 복합키 지원: WHERE 절에 모든 PK 컬럼 조건 포함
-
 **주의사항**:
-- _bak 컬럼은 소문자 사용 (PostgreSQL 호환)
-- status 업데이트는 Writer가 아닌 **MigrationStatusListener**에서 처리 (단일 책임 원칙)
+- status 업데이트는 **MigrationStatusListener**에서 처리 (Step 완료 시)
 
 ---
 
@@ -326,24 +268,14 @@ CREATE TABLE migration_config (
 ```
 예시: customer 테이블
 
-Before (사전 준비 전):
+Before:
 - customer_id (PK)
 - phone
 - email
 - name
 
-After 사전 준비 (백업 컬럼 수동 생성):
-- customer_id (PK)
-- phone
-- email
-- name
-- phone_bak      ← 수동으로 생성 (소문자)
-- email_bak      ← 수동으로 생성 (소문자)
-
-After Step 1 (암호화 처리):
-- phone_bak = "010-1234-5678" (원본 백업)
+After 암호화 처리:
 - phone = "encrypted_value" (암호화됨)
-- email_bak = "test@example.com" (원본 백업)
 - email = "encrypted_value" (암호화됨)
 ```
 
@@ -361,31 +293,26 @@ After Step 1 (암호화 처리):
 - 예: `target_column_name = "phone,email,address"`
 - 여러 컬럼을 한 번의 UPDATE로 처리하여 성능 최적화
 
-### 3. 자동 백업
-- 원본 데이터 손실 방지
-- 백업 컬럼에 원본 데이터 저장 (_bak 소문자)
-- 백업 컬럼은 사전에 수동으로 생성 필요
-
-### 4. 트랜잭션 관리
+### 3. 트랜잭션 관리
 - Chunk 단위로 커밋/롤백
 - 데이터 업데이트와 status 업데이트가 같은 트랜잭션으로 처리
 - 에러 발생 시 안전하게 롤백
 
-### 5. 순차 처리
+### 4. 순차 처리
 - 테이블별로 독립적인 Step 생성
 - 순차 실행 (안정성 우선)
 - Step 개수 = 테이블 개수
 
-### 6. 복합키 지원
+### 5. 복합키 지원
 - 단일키 및 복합키 모두 지원
 - INFORMATION_SCHEMA에서 자동으로 모든 PK 컬럼 조회
 - 동적 WHERE 절 생성
 
-### 7. 자동 상태 관리
+### 6. 자동 상태 관리
 - 처리 완료 후 status를 'COMPLETE'로 자동 업데이트
 - 재실행 시 'COMPLETE' 상태인 테이블은 자동 제외
 
-### 8. 정확한 read_count
+### 7. 정확한 read_count
 - Reader가 실제 테이블 레코드를 직접 읽음
 - Step별 read_count가 실제 처리한 레코드 수를 정확하게 반영
 - 예: TB_USER 150건 → encryptionStep_TB_USER의 read_count = 150 ✅
@@ -421,24 +348,19 @@ INFO  - Job 'migrationJob' completed successfully
 
 ## ⚠️ 주의사항
 
-1. **백업 컬럼 사전 생성 필수**: 
-   - 배치 실행 전에 모든 대상 컬럼에 대한 백업 컬럼(_bak)을 수동으로 생성해야 함
-   - 백업 컬럼이 없으면 Writer에서 오류 발생
+1. **SafeDB 라이브러리**: `SafeDBUtil`은 현재 플레이스홀더 구현입니다. 실제 SafeDB 라이브러리로 교체 필요
 
-2. **SafeDB 라이브러리**: `SafeDBUtil`은 현재 플레이스홀더 구현입니다. 실제 SafeDB 라이브러리로 교체 필요
-
-3. **PostgreSQL 호환성**: 
-   - 백업 컬럼명은 소문자 (_bak) 사용
+2. **PostgreSQL 호환성**: 
    - 예약어 테이블명은 큰따옴표로 감싸기 (예: "order")
 
-4. **단일 데이터소스**:
+3. **단일 데이터소스**:
    - `migration_config` 테이블, 대상 테이블, 배치 메타데이터가 모두 같은 DB에 있음
 
-5. **순차 처리**:
+4. **순차 처리**:
    - 각 테이블별로 독립적인 Step 순차 실행
    - 안정성 우선
 
-6. **read_count 정확성**:
+5. **read_count 정확성**:
    - Reader가 실제 테이블 레코드를 직접 읽어 정확한 집계 가능
    - migration_config 개수가 아닌 실제 처리 레코드 수 반영
 
@@ -448,12 +370,9 @@ INFO  - Job 'migrationJob' completed successfully
 
 ### 최적화 포인트
 1. **여러 컬럼을 한 번의 UPDATE로 처리**: 같은 PK의 여러 컬럼을 한 번에 업데이트
-   - 예: 3개 컬럼 → 1번의 UPDATE (기존: 6번 = 백업 3번 + 암호화 3번)
 
-2. **백업과 암호화를 한 번에 처리**: 백업 컬럼 저장과 암호화된 값 업데이트를 동시에 수행
+2. **Chunk 처리**: 대용량 데이터를 chunk 단위로 나눠서 처리 (기본 1000건)
 
-3. **Chunk 처리**: 대용량 데이터를 chunk 단위로 나눠서 처리 (기본 1000건)
+3. **동적 쿼리 최적화**: PK 기반 효율적인 WHERE 절 생성
 
-4. **동적 쿼리 최적화**: PK 기반 효율적인 WHERE 절 생성
-
-5. **트랜잭션 최적화**: Chunk 단위 커밋으로 메모리 효율성 확보
+4. **트랜잭션 최적화**: Chunk 단위 커밋으로 메모리 효율성 확보

@@ -32,7 +32,6 @@ CRM-MIG/
 │   │   │               ├── config/            # 설정 클래스
 │   │   │               │   ├── BatchConfig.java                  # Step 설정
 │   │   │               │   ├── MigrationJobConfig.java          # Job 설정 (테이블별 Step 동적 생성)
-│   │   │               │   ├── MigrationProperties.java         # 설정 Properties (스키마명 등)
 │   │   │               │   ├── DatabaseConfig.java              # 데이터소스 설정 (단일)
 │   │   │               │   ├── MyBatisConfig.java               # MyBatis 설정
 │   │   │               │   └── SafeDBConfig.java                # SafeDB 설정
@@ -43,15 +42,10 @@ CRM-MIG/
 │   │   │               │
 │   │   │               ├── model/             # 엔티티 모델 (Lombok 적용)
 │   │   │               │   ├── MigrationConfigEntity.java    # 마이그레이션 설정 (@Data, @NoArgsConstructor)
-│   │   │               │   ├── TargetRecordEntity.java      # 레코드 엔티티 (@Data, 명시적 생성자)
-│   │   │               │   ├── SourceEntity.java            # 소스 엔티티 (레거시)
-│   │   │               │   └── TargetEntity.java            # 타겟 엔티티 (레거시)
+│   │   │               │   └── TargetRecordEntity.java      # 레코드 엔티티 (@Data, 명시적 생성자)
 │   │   │               │
 │   │   │               ├── scheduler/         # 스케줄러
 │   │   │               │   └── MigrationScheduler.java      # 배치 Job 스케줄링
-│   │   │               │
-│   │   │               ├── service/          # 서비스 레이어
-│   │   │               │   └── BackupColumnService.java     # 백업 컬럼 자동 생성 서비스
 │   │   │               │
 │   │   │               └── util/               # 유틸리티
 │   │   │                   └── SafeDBUtil.java               # SafeDB 암호화 유틸리티
@@ -79,12 +73,11 @@ com.kt.yaap.mig_batch
 ├── batch                                       # 배치 처리 컴포넌트
 │   ├── TableRecordReader                      # 실제 테이블 레코드를 직접 읽음
 │   ├── EncryptionProcessor                     # SafeDB 암호화 처리
-│   └── EncryptionWriter                        # UPDATE 수행 (status 업데이트 포함)
+│   └── EncryptionWriter                        # UPDATE 수행
 │
 ├── config                                      # 설정 클래스
 │   ├── BatchConfig                             # Step 설정
 │   ├── MigrationJobConfig                      # Job 설정 (테이블별 Step 동적 생성)
-│   ├── MigrationProperties                     # 설정 Properties (스키마명 등)
 │   ├── DatabaseConfig                          # 데이터소스 설정 (단일)
 │   ├── MyBatisConfig                           # MyBatis SqlSessionFactory 설정
 │   └── SafeDBConfig                            # SafeDB 설정
@@ -95,15 +88,10 @@ com.kt.yaap.mig_batch
 │
 ├── model                                       # 엔티티 모델 (Lombok 적용)
 │   ├── MigrationConfigEntity                   # 마이그레이션 설정 (@Data, @NoArgsConstructor)
-│   ├── TargetRecordEntity                      # 레코드 엔티티 (@Data, 명시적 생성자)
-│   ├── SourceEntity                            # 소스 엔티티 (레거시)
-│   └── TargetEntity                            # 타겟 엔티티 (레거시)
+│   └── TargetRecordEntity                      # 레코드 엔티티 (@Data, 명시적 생성자)
 │
 ├── scheduler                                   # 스케줄러
 │   └── MigrationScheduler                      # 배치 Job 스케줄링
-│
-├── service                                     # 서비스 레이어
-│   └── BackupColumnService                     # 백업 컬럼 자동 생성 (_bak 소문자)
 │
 └── util                                        # 유틸리티
     └── SafeDBUtil                              # SafeDB 암호화/복호화
@@ -124,33 +112,20 @@ com.kt.yaap.mig_batch
   - 복합키 지원
 
 - **EncryptionWriter**: 
-  - 원본 값을 `_bak` 컬럼에 백업 (소문자)
-  - 암호화된 값으로 UPDATE (여러 컬럼을 한 번에)
-  - 처리 완료 후 status를 'COMPLETE'로 업데이트
+  - 암호화된 값으로 UPDATE (여러 컬럼 한 번에)
+  - 레코드 단위 updateTargetRecordWithMultipleColumns
 
 ### 설정 (config/)
 - **BatchConfig**: 
-  - createBackupColumnStep (백업 컬럼 생성)
   - createTableEncryptionStep (테이블별 Step 생성 메서드)
 
 - **MigrationJobConfig**: 
   - migrationJob (테이블별 Step 동적 생성 및 순차 연결)
   - migration_config에서 설정을 읽어 테이블별로 Step 생성
 
-- **MigrationProperties**:
-  - application.yml의 migration 설정을 Properties로 매핑
-  - chunk-size, config-table, schema-name 설정
-
 - **DatabaseConfig**: 단일 데이터소스 설정
 - **MyBatisConfig**: MyBatis SqlSessionFactory 설정
 - **SafeDBConfig**: SafeDB 설정
-
-### 서비스 (service/)
-- **BackupColumnService**: 
-  - 백업 컬럼 존재 여부 확인
-  - 원본 컬럼 타입 조회
-  - 백업 컬럼 자동 생성 (_bak 소문자)
-  - 중복 컬럼 오류 처리 강화
 
 ### Mapper (mapper/)
 - **MigrationConfigMapper**: 
@@ -158,10 +133,10 @@ com.kt.yaap.mig_batch
   - status 업데이트
 
 - **TargetTableMapper**: 
-  - PK 조회 (복합키 지원)
-  - 데이터 조회 (복합키 지원)
-  - 백업 컬럼 생성
-  - UPDATE 수행 (복합키 지원, 여러 컬럼 한 번에)
+  - selectPrimaryKeyColumns: PK 조회 (복합키 지원)
+  - selectAllTargetColumnsStreaming: 스트리밍 조회
+  - updateTargetRecordWithMultipleColumns: 레코드 단위 UPDATE
+  - bulkUpdateTargetRecords: 벌크 UPDATE
 
 ## 리소스 파일
 
@@ -174,7 +149,7 @@ com.kt.yaap.mig_batch
 
 ### Mapper XML
 - **MigrationConfigMapper.xml**: 설정 테이블 쿼리
-- **TargetTableMapper.xml**: 대상 테이블 쿼리 (PK 조회, 데이터 조회, 컬럼 생성, UPDATE)
+- **TargetTableMapper.xml**: 대상 테이블 쿼리 (PK 조회, 스트리밍 조회, UPDATE)
 
 ## ⚠️ 주의사항
 
@@ -192,10 +167,6 @@ com.kt.yaap.mig_batch
 
 ```
 migrationJob
-├── createBackupColumnStep (Tasklet)
-│   └── BackupColumnService.createBackupColumns()
-│       └── _bak 컬럼 자동 생성 (소문자)
-│
 ├── encryptionStep_TB_USER (Chunk, 순차 실행)
 │   ├── Reader: TableRecordReader (TB_USER 테이블의 레코드 직접 읽기)
 │   ├── Processor: EncryptionProcessor
@@ -231,18 +202,10 @@ migrationJob
    - 이전: 병렬 처리, JobExecutionContext 사용
    - 현재: 순차 처리, 테이블별 Step 동적 생성
 
-5. **백업 컬럼**
-   - 이전: `_BAK` (대문자)
-   - 현재: `_bak` (소문자, PostgreSQL 호환)
-
-6. **Properties 추가**
-   - `MigrationProperties` 클래스 추가
-   - `schema-name` 설정 추가
-
-7. **read_count 정확성**
+5. **read_count 정확성**
    - Step별 read_count가 실제 처리한 레코드 수를 정확하게 반영
    - 예: TB_USER 150건 → encryptionStep_TB_USER의 read_count = 150
 
-8. **MyBatis 쿼리 로깅**
+6. **MyBatis 쿼리 로깅**
    - application.yml에 로그 설정 추가
    - DEBUG, TRACE 레벨로 SQL 및 파라미터 출력

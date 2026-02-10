@@ -150,7 +150,6 @@ mvn spring-boot:run
 - 자동 상태 관리 구현 완료 (COMPLETE)
 - Reader가 실제 테이블 레코드를 직접 읽음
 - read_count가 실제 처리한 레코드 수를 정확하게 반영
-- 백업 컬럼 소문자 (_bak) 사용 (PostgreSQL 호환)
 - MyBatis 쿼리 로깅 설정 추가
 
 ⚠️ 수동 작업 필요:

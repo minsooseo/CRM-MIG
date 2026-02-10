@@ -366,25 +366,19 @@ java -jar crm-mig-1.0.0.jar \
 ## 배치 실행 플로우
 
 ```
-1. createBackupColumnStep (Tasklet)
+1. encryptionStep_테이블명 (Chunk-oriented, 테이블별 순차)
    ↓
-   - migration_config에서 활성 설정 조회
-   - 각 테이블/컬럼에 대해 _BAK 컬럼 생성
-   - 이미 존재하는 경우 스킵
-
-2. migrationStep (Chunk-oriented)
-   ↓
-   [Reader] MigrationItemReader
-   - migration_config에서 status != 'COMPLETE' 조회
+   [Reader] TableRecordReader
+   - 실제 테이블 레코드 직접 읽기 (PK + 대상 컬럼)
    
-   [Processor] MigrationItemProcessor
-   - 대상 테이블에서 데이터 조회
+   [Processor] EncryptionProcessor
    - SafeDB 암호화 적용
    
-   [Writer] MigrationItemWriter
-   - 원본 데이터를 _BAK 컬럼에 백업
-   - 암호화된 데이터를 원본 컬럼에 업데이트
-   - migration_config의 status를 'COMPLETE'로 업데이트
+   [Writer] EncryptionWriter
+   - 암호화된 값으로 UPDATE
+   
+   [Listener] MigrationStatusListener
+   - Step 완료 시 migration_config status를 'COMPLETE'로 업데이트
 ```
 
 ## 참고사항

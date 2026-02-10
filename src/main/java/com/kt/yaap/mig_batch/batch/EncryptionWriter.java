@@ -64,11 +64,21 @@ public class EncryptionWriter implements ItemWriter<TargetRecordEntity> {
                     continue;
                 }
 
+                List<Map<String, Object>> pkConditions = new ArrayList<Map<String, Object>>();
+
+                for (String pkColumnName : item.getPkColumnNames()) {
+                    Map<String, Object> pkCondition = new HashMap<String, Object>();
+                    pkCondition.put("columnName", pkColumnName);
+                    pkCondition.put("value", item.getPkValues().get(pkColumnName));
+                    pkConditions.add(pkCondition);
+                }
+
                 Map<String, Object> updateParams = new HashMap<String, Object>();
                 updateParams.put("tableName", tableName);
                 updateParams.put("columnUpdates", columnUpdates);
                 updateParams.put("pkColumnNames", item.getPkColumnNames());
-                updateParams.put("pkValues", item.getPkValues());
+                //updateParams.put("pkValues", item.getPkValues());
+                updateParams.put("pkConditions", pkConditions);
 
                 mapper.updateTargetRecordWithMultipleColumns(updateParams);
                 updateCount++;

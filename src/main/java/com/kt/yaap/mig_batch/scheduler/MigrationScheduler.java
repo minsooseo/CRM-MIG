@@ -30,31 +30,7 @@ public class MigrationScheduler {
     @Qualifier("migrationJob")
     private Job migrationJob;
 
-    /**
-     * 매일 새벽 2시에 실행
-     * cron 표현식: 초 분 시 일 월 요일
-     */
-    @Scheduled(cron = "0 0 2 * * ?")
-    public void runMigrationJob() {
-        if (jobLauncher == null || migrationJob == null) {
-            log.warn("JobLauncher 또는 migrationJob이 주입되지 않았습니다. Job 실행을 건너뜁니다.");
-            return;
-        }
-        
-        try {
-            log.info("=== 마이그레이션 Job 시작 ===");
-            
-            JobParameters jobParameters = new JobParametersBuilder()
-                    .addLong("timestamp", System.currentTimeMillis())
-                    .toJobParameters();
 
-            jobLauncher.run(migrationJob, jobParameters);
-            
-            log.info("=== 마이그레이션 Job 완료 ===");
-        } catch (Exception e) {
-            log.error("마이그레이션 Job 실행 중 오류 발생", e);
-        }
-    }
 
     /**
      * 수동 실행용 메서드
